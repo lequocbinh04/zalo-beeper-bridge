@@ -255,6 +255,42 @@ export class ZaloClientWrapper {
     }
   }
 
+  async getAllFriends(count = 100, page = 1): Promise<any[]> {
+    if (!this.state.loggedIn || !this.state.api) {
+      throw new Error("Not logged in");
+    }
+
+    try {
+      const friends = await this.state.api.getAllFriends(count, page);
+      console.log(`[ZaloClient] Fetched ${friends.length} friends (page ${page})`);
+      return friends.map((f: any) => ({
+        userId: f.userId,
+        displayName: f.displayName || f.zaloName || "",
+        avatar: f.avatar || "",
+      }));
+    } catch (error: any) {
+      console.error("[ZaloClient] Get all friends failed:", error);
+      throw error;
+    }
+  }
+
+  async getAllGroups(): Promise<any[]> {
+    if (!this.state.loggedIn || !this.state.api) {
+      throw new Error("Not logged in");
+    }
+
+    try {
+      const resp = await this.state.api.getAllGroups();
+      // Returns { gridVerMap: { [groupId]: version } } — just IDs
+      const groupIds = Object.keys(resp.gridVerMap || {});
+      console.log(`[ZaloClient] Fetched ${groupIds.length} group IDs`);
+      return groupIds.map((id) => ({ groupId: id }));
+    } catch (error: any) {
+      console.error("[ZaloClient] Get all groups failed:", error);
+      throw error;
+    }
+  }
+
   setupListeners(broadcast: BroadcastFn): void {
     if (!this.state.api) {
       console.warn("[ZaloClient] Cannot setup listeners - no API instance");

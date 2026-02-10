@@ -79,14 +79,19 @@ export async function groupRoutes(
     schema: {
       tags: ["group"],
       summary: "List all groups",
-      description: "List all known groups. May return empty if not yet cached.",
+      description: "Returns group IDs. Use GET /group/:id for full info.",
       response: {
         200: {
           type: "object",
           properties: {
             success: { type: "boolean" },
-            groups: { type: "array", items: { type: "object" } },
-            message: { type: "string" },
+            groups: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: { groupId: { type: "string" } },
+              },
+            },
           },
         },
         500: errorSchema,
@@ -95,12 +100,8 @@ export async function groupRoutes(
   }, async (request, reply) => {
     try {
       console.log("[GroupRoutes] Fetching all groups");
-
-      return reply.send({
-        success: true,
-        groups: [],
-        message: "Group listing not yet implemented - cache groups from incoming messages",
-      });
+      const groups = await zaloClient.getAllGroups();
+      return reply.send({ success: true, groups });
     } catch (error: any) {
       console.error("[GroupRoutes] List groups error:", error);
       return reply.code(500).send({

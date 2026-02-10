@@ -74,6 +74,54 @@ export async function userRoutes(
     }
   });
 
+  // GET /friends - List all friends
+  app.get<{ Querystring: { count?: number; page?: number } }>("/friends", {
+    schema: {
+      tags: ["user"],
+      summary: "List all friends",
+      querystring: {
+        type: "object",
+        properties: {
+          count: { type: "number", default: 100, description: "Friends per page" },
+          page: { type: "number", default: 1, description: "Page number" },
+        },
+      },
+      response: {
+        200: {
+          type: "object",
+          properties: {
+            success: { type: "boolean" },
+            friends: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  userId: { type: "string" },
+                  displayName: { type: "string" },
+                  avatar: { type: "string" },
+                },
+              },
+            },
+          },
+        },
+        500: errorSchema,
+      },
+    },
+  }, async (request, reply) => {
+    try {
+      const { count = 100, page = 1 } = request.query;
+      console.log(`[UserRoutes] Fetching friends (count=${count}, page=${page})`);
+      const friends = await zaloClient.getAllFriends(count, page);
+      return reply.send({ success: true, friends });
+    } catch (error: any) {
+      console.error("[UserRoutes] Get friends error:", error);
+      return reply.code(500).send({
+        error: error.message || "Get friends failed",
+        code: "GET_FRIENDS_ERROR",
+      });
+    }
+  });
+
   // GET /self - Get own info
   app.get("/self", {
     schema: {
