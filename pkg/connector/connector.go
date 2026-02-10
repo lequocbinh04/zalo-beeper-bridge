@@ -32,7 +32,7 @@ func (z *ZaloConnector) GetName() bridgev2.BridgeName {
 	return bridgev2.BridgeName{
 		DisplayName:      "Zalo",
 		NetworkURL:       "https://zalo.me",
-		NetworkIcon:      "",
+		NetworkIcon:      "mxc://local.beeper.com/crisne04_OovwiuuLJPmqcDXWCFtkglUtGvXZn2mVhCQCub47BokbQSxcSRiZrHW5zjvZM0p3",
 		NetworkID:        "zalo",
 		BeeperBridgeType: "github.com/niconiconainu/mautrix-zalo",
 		DefaultPort:      29322,
