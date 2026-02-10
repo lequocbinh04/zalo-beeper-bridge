@@ -3,6 +3,14 @@
 import type { FastifyInstance } from "fastify";
 import type { ZaloClientWrapper } from "../zalo-client.js";
 
+const errorSchema = {
+  type: "object" as const,
+  properties: {
+    error: { type: "string" as const },
+    code: { type: "string" as const },
+  },
+};
+
 export async function groupRoutes(
   app: FastifyInstance,
   options: { zaloClient: ZaloClientWrapper }
@@ -10,7 +18,36 @@ export async function groupRoutes(
   const { zaloClient } = options;
 
   // GET /group/:id - Get group info
-  app.get<{ Params: { id: string } }>("/group/:id", async (request, reply) => {
+  app.get<{ Params: { id: string } }>("/group/:id", {
+    schema: {
+      tags: ["group"],
+      summary: "Get group info",
+      params: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "Zalo group ID" },
+        },
+      },
+      response: {
+        200: {
+          type: "object",
+          properties: {
+            success: { type: "boolean" },
+            group: {
+              type: "object",
+              properties: {
+                groupId: { type: "string" },
+                name: { type: "string" },
+                members: { type: "array", items: { type: "object" } },
+              },
+            },
+          },
+        },
+        400: errorSchema,
+        500: errorSchema,
+      },
+    },
+  }, async (request, reply) => {
     try {
       const { id } = request.params;
 
@@ -38,12 +75,27 @@ export async function groupRoutes(
   });
 
   // GET /groups - List all groups
-  app.get("/groups", async (request, reply) => {
+  app.get("/groups", {
+    schema: {
+      tags: ["group"],
+      summary: "List all groups",
+      description: "List all known groups. May return empty if not yet cached.",
+      response: {
+        200: {
+          type: "object",
+          properties: {
+            success: { type: "boolean" },
+            groups: { type: "array", items: { type: "object" } },
+            message: { type: "string" },
+          },
+        },
+        500: errorSchema,
+      },
+    },
+  }, async (request, reply) => {
     try {
       console.log("[GroupRoutes] Fetching all groups");
 
-      // Note: This endpoint may not be available in zca-js API
-      // May need to implement group list caching or alternative approach
       return reply.send({
         success: true,
         groups: [],

@@ -3,6 +3,14 @@
 import type { FastifyInstance } from "fastify";
 import type { ZaloClientWrapper } from "../zalo-client.js";
 
+const errorSchema = {
+  type: "object" as const,
+  properties: {
+    error: { type: "string" as const },
+    code: { type: "string" as const },
+  },
+};
+
 export async function userRoutes(
   app: FastifyInstance,
   options: { zaloClient: ZaloClientWrapper }
@@ -10,7 +18,36 @@ export async function userRoutes(
   const { zaloClient } = options;
 
   // GET /user/:id - Get user info
-  app.get<{ Params: { id: string } }>("/user/:id", async (request, reply) => {
+  app.get<{ Params: { id: string } }>("/user/:id", {
+    schema: {
+      tags: ["user"],
+      summary: "Get user info",
+      params: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "Zalo user ID" },
+        },
+      },
+      response: {
+        200: {
+          type: "object",
+          properties: {
+            success: { type: "boolean" },
+            user: {
+              type: "object",
+              properties: {
+                userId: { type: "string" },
+                displayName: { type: "string" },
+                avatar: { type: "string" },
+              },
+            },
+          },
+        },
+        400: errorSchema,
+        500: errorSchema,
+      },
+    },
+  }, async (request, reply) => {
     try {
       const { id } = request.params;
 
@@ -38,7 +75,31 @@ export async function userRoutes(
   });
 
   // GET /self - Get own info
-  app.get("/self", async (request, reply) => {
+  app.get("/self", {
+    schema: {
+      tags: ["user"],
+      summary: "Get logged-in user info",
+      response: {
+        200: {
+          type: "object",
+          properties: {
+            success: { type: "boolean" },
+            ownId: { type: "string" },
+            user: {
+              type: "object",
+              properties: {
+                userId: { type: "string" },
+                displayName: { type: "string" },
+                avatar: { type: "string" },
+              },
+            },
+          },
+        },
+        401: errorSchema,
+        500: errorSchema,
+      },
+    },
+  }, async (request, reply) => {
     try {
       console.log("[UserRoutes] Fetching self info");
       const ownId = await zaloClient.getSelfId();

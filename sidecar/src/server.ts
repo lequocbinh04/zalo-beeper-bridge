@@ -2,6 +2,8 @@
 
 import Fastify from "fastify";
 import websocket from "@fastify/websocket";
+import swagger from "@fastify/swagger";
+import swaggerUi from "@fastify/swagger-ui";
 import type { FastifyInstance } from "fastify";
 import type { ZaloClientWrapper } from "./zalo-client.js";
 import type { BroadcastFn, WsEvent } from "./types.js";
@@ -54,6 +56,28 @@ export async function createServer(
     }
   };
 
+  // Swagger docs
+  await app.register(swagger, {
+    openapi: {
+      info: {
+        title: "mautrix-zalo Sidecar API",
+        description: "Node.js sidecar wrapping zca-js for Zalo API access",
+        version: "1.0.0",
+      },
+      tags: [
+        { name: "health", description: "Health check" },
+        { name: "login", description: "Authentication" },
+        { name: "message", description: "Send messages, reactions, undo" },
+        { name: "user", description: "User info" },
+        { name: "group", description: "Group info" },
+      ],
+    },
+  });
+
+  await app.register(swaggerUi, {
+    routePrefix: "/docs",
+  });
+
   // Register WebSocket plugin
   await app.register(websocket);
 
@@ -89,7 +113,22 @@ export async function createServer(
   });
 
   // Health check
-  app.get("/health", async (request, reply) => {
+  app.get("/health", {
+    schema: {
+      tags: ["health"],
+      summary: "Health check",
+      response: {
+        200: {
+          type: "object",
+          properties: {
+            status: { type: "string" },
+            timestamp: { type: "number" },
+            loggedIn: { type: "boolean" },
+          },
+        },
+      },
+    },
+  }, async (request, reply) => {
     return reply.send({
       status: "ok",
       timestamp: Date.now(),

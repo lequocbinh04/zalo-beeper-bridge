@@ -4,6 +4,14 @@ import type { FastifyInstance } from "fastify";
 import type { ZaloClientWrapper } from "../zalo-client.js";
 import type { CookieLoginRequest } from "../types.js";
 
+const errorSchema = {
+  type: "object" as const,
+  properties: {
+    error: { type: "string" as const },
+    code: { type: "string" as const },
+  },
+};
+
 export async function loginRoutes(
   app: FastifyInstance,
   options: { zaloClient: ZaloClientWrapper }
@@ -11,7 +19,24 @@ export async function loginRoutes(
   const { zaloClient } = options;
 
   // POST /login/qr - Initiate QR login
-  app.post("/login/qr", async (request, reply) => {
+  app.post("/login/qr", {
+    schema: {
+      tags: ["login"],
+      summary: "Initiate QR code login",
+      description: "Start a QR login flow. Returns QR data to display to the user.",
+      response: {
+        200: {
+          type: "object",
+          properties: {
+            success: { type: "boolean" },
+            qr: { type: "string", description: "QR code data" },
+            session: { type: "object", description: "Session data" },
+          },
+        },
+        500: errorSchema,
+      },
+    },
+  }, async (request, reply) => {
     try {
       console.log("[LoginRoutes] QR login requested");
       const result = await zaloClient.loginQR();
@@ -38,7 +63,33 @@ export async function loginRoutes(
   });
 
   // POST /login/cookie - Restore session with cookie
-  app.post<{ Body: CookieLoginRequest }>("/login/cookie", async (request, reply) => {
+  app.post<{ Body: CookieLoginRequest }>("/login/cookie", {
+    schema: {
+      tags: ["login"],
+      summary: "Login with stored cookie",
+      description: "Restore a Zalo session using previously saved credentials.",
+      body: {
+        type: "object",
+        required: ["cookie", "imei", "userAgent"],
+        properties: {
+          cookie: { type: "string", description: "Zalo session cookie" },
+          imei: { type: "string", description: "Device IMEI" },
+          userAgent: { type: "string", description: "Browser user agent" },
+        },
+      },
+      response: {
+        200: {
+          type: "object",
+          properties: {
+            success: { type: "boolean" },
+            ownId: { type: "string", description: "Logged-in user's Zalo ID" },
+          },
+        },
+        400: errorSchema,
+        500: errorSchema,
+      },
+    },
+  }, async (request, reply) => {
     try {
       const { cookie, imei, userAgent } = request.body;
 
@@ -73,7 +124,23 @@ export async function loginRoutes(
   });
 
   // POST /logout - Disconnect
-  app.post("/logout", async (request, reply) => {
+  app.post("/logout", {
+    schema: {
+      tags: ["login"],
+      summary: "Logout",
+      description: "Disconnect the current Zalo session.",
+      response: {
+        200: {
+          type: "object",
+          properties: {
+            success: { type: "boolean" },
+            message: { type: "string" },
+          },
+        },
+        500: errorSchema,
+      },
+    },
+  }, async (request, reply) => {
     try {
       console.log("[LoginRoutes] Logout requested");
       zaloClient.disconnect();

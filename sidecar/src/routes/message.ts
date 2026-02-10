@@ -10,6 +10,19 @@ import type {
   UndoMessageRequest,
 } from "../types.js";
 
+const errorSchema = {
+  type: "object" as const,
+  properties: {
+    error: { type: "string" as const },
+    code: { type: "string" as const },
+  },
+};
+
+const threadFields = {
+  threadId: { type: "string" as const, description: "Chat thread ID" },
+  threadType: { type: "number" as const, enum: [0, 1], description: "0 = User, 1 = Group" },
+};
+
 export async function messageRoutes(
   app: FastifyInstance,
   options: { zaloClient: ZaloClientWrapper }
@@ -17,7 +30,32 @@ export async function messageRoutes(
   const { zaloClient } = options;
 
   // POST /send/text - Send text message
-  app.post<{ Body: SendTextRequest }>("/send/text", async (request, reply) => {
+  app.post<{ Body: SendTextRequest }>("/send/text", {
+    schema: {
+      tags: ["message"],
+      summary: "Send text message",
+      body: {
+        type: "object",
+        required: ["msg", "threadId", "threadType"],
+        properties: {
+          msg: { type: "string", description: "Message content" },
+          ...threadFields,
+          quote: { type: "string", description: "Message ID to quote/reply to" },
+        },
+      },
+      response: {
+        200: {
+          type: "object",
+          properties: {
+            success: { type: "boolean" },
+            messageId: { type: "string" },
+          },
+        },
+        400: errorSchema,
+        500: errorSchema,
+      },
+    },
+  }, async (request, reply) => {
     try {
       const { msg, threadId, threadType, quote } = request.body;
 
@@ -52,7 +90,31 @@ export async function messageRoutes(
   });
 
   // POST /send/image - Send image
-  app.post<{ Body: SendImageRequest }>("/send/image", async (request, reply) => {
+  app.post<{ Body: SendImageRequest }>("/send/image", {
+    schema: {
+      tags: ["message"],
+      summary: "Send image",
+      body: {
+        type: "object",
+        required: ["filePath", "threadId", "threadType"],
+        properties: {
+          filePath: { type: "string", description: "Local path to image file" },
+          ...threadFields,
+        },
+      },
+      response: {
+        200: {
+          type: "object",
+          properties: {
+            success: { type: "boolean" },
+            messageId: { type: "string" },
+          },
+        },
+        400: errorSchema,
+        500: errorSchema,
+      },
+    },
+  }, async (request, reply) => {
     try {
       const { filePath, threadId, threadType } = request.body;
 
@@ -87,7 +149,31 @@ export async function messageRoutes(
   });
 
   // POST /send/sticker - Send sticker
-  app.post<{ Body: SendStickerRequest }>("/send/sticker", async (request, reply) => {
+  app.post<{ Body: SendStickerRequest }>("/send/sticker", {
+    schema: {
+      tags: ["message"],
+      summary: "Send sticker",
+      body: {
+        type: "object",
+        required: ["stickerId", "threadId", "threadType"],
+        properties: {
+          stickerId: { type: "string", description: "Sticker ID" },
+          ...threadFields,
+        },
+      },
+      response: {
+        200: {
+          type: "object",
+          properties: {
+            success: { type: "boolean" },
+            messageId: { type: "string" },
+          },
+        },
+        400: errorSchema,
+        500: errorSchema,
+      },
+    },
+  }, async (request, reply) => {
     try {
       const { stickerId, threadId, threadType } = request.body;
 
@@ -122,7 +208,29 @@ export async function messageRoutes(
   });
 
   // POST /send/reaction - Send reaction
-  app.post<{ Body: SendReactionRequest }>("/send/reaction", async (request, reply) => {
+  app.post<{ Body: SendReactionRequest }>("/send/reaction", {
+    schema: {
+      tags: ["message"],
+      summary: "Send reaction to a message",
+      body: {
+        type: "object",
+        required: ["messageId", "emoji", "threadId", "threadType"],
+        properties: {
+          messageId: { type: "string", description: "Target message ID" },
+          emoji: { type: "string", description: "Reaction emoji" },
+          ...threadFields,
+        },
+      },
+      response: {
+        200: {
+          type: "object",
+          properties: { success: { type: "boolean" } },
+        },
+        400: errorSchema,
+        500: errorSchema,
+      },
+    },
+  }, async (request, reply) => {
     try {
       const { messageId, emoji, threadId, threadType } = request.body;
 
@@ -156,7 +264,28 @@ export async function messageRoutes(
   });
 
   // POST /send/undo - Undo message
-  app.post<{ Body: UndoMessageRequest }>("/send/undo", async (request, reply) => {
+  app.post<{ Body: UndoMessageRequest }>("/send/undo", {
+    schema: {
+      tags: ["message"],
+      summary: "Undo/recall a message",
+      body: {
+        type: "object",
+        required: ["messageId", "threadId", "threadType"],
+        properties: {
+          messageId: { type: "string", description: "Message ID to undo" },
+          ...threadFields,
+        },
+      },
+      response: {
+        200: {
+          type: "object",
+          properties: { success: { type: "boolean" } },
+        },
+        400: errorSchema,
+        500: errorSchema,
+      },
+    },
+  }, async (request, reply) => {
     try {
       const { messageId, threadId, threadType } = request.body;
 
