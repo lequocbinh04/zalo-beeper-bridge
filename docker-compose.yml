@@ -1,0 +1,28 @@
+services:
+  sidecar:
+    build:
+      context: ./sidecar
+    ports:
+      - "3500:3500"
+    environment:
+      - SIDECAR_PORT=3500
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3500/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  bridge:
+    build:
+      context: .
+    depends_on:
+      sidecar:
+        condition: service_healthy
+    environment:
+      - SIDECAR_URL=http://sidecar:3500
+    volumes:
+      - ./data:/data
+    ports:
+      - "29322:29322"
+    restart: unless-stopped

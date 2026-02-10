@@ -1,0 +1,44 @@
+# Go binary
+/mautrix-zalo
+/mautrix-zalo.exe
+*.exe
+*.dll
+*.so
+*.dylib
+/vendor/
+
+# Node.js
+node_modules/
+dist/
+*.tsbuildinfo
+
+# AI agents & tooling
+.claude/
+.opencode/
+.gemini/
+.serena/
+CLAUDE.md
+AGENTS.md
+plans/
+repomix-output.xml
+.repomixignore
+release-manifest.json
+prompt.md
+ck.md
+nul
+
+# Environment & secrets
+.env*
+!.env.example
+config.yaml
+*.db
+*.pem
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build & debug
+npm-debug.log*
+yarn-debug.log*
+*.log
