@@ -1,0 +1,10 @@
+id: eee77baa-4d06-4f2f-8bb4-40ccd76b35f1
+url: http://localhost:29322
+as_token: hua_C8wxwIiRPoRuV7S7wbfWubo2RwGkSaGcIDhb5iSCfj7ECpFGdkMQU_OIdi74
+hs_token: huh_MXXdH6p10CUPsbNi7GTMtYfvW6aCYWG85LYQNHHWtXe6CChDJyXtm_DRIaC2
+sender_localpart: sh-zalobot
+namespaces:
+  users:
+    - regex: '@sh-zalo_.+:beeper\.local'
+      exclusive: true
+receive_ephemeral: true

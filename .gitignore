@@ -1,5 +1,4 @@
 # Go binary
-/mautrix-zalo
 /mautrix-zalo.exe
 *.exe
 *.dll

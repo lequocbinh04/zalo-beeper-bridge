@@ -1,15 +1,13 @@
 # Build stage
-FROM golang:1.25-alpine AS builder
-RUN apk add --no-cache git
+FROM golang:1.24-alpine AS builder
+RUN apk add --no-cache git gcc musl-dev
 WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build \
-    -ldflags "-X main.Tag=$(git describe --tags 2>/dev/null || echo unknown) \
-              -X main.Commit=$(git rev-parse --short HEAD 2>/dev/null || echo unknown) \
-              -X 'main.BuildTime=$(date -u)'" \
-    -o mautrix-zalo ./cmd/mautrix-zalo/
+RUN CGO_ENABLED=1 go build -tags nocrypto \
+    -ldflags "-X main.Tag=v0.1.0 -X main.Commit=$(git rev-parse --short HEAD || echo unknown) -X main.BuildTime=$(date -u +%Y%m%d-%H%M%S)" \
+    -o /app/mautrix-zalo ./cmd/mautrix-zalo
 
 # Runtime stage
 FROM alpine:3.19

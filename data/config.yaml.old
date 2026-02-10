@@ -1,0 +1,24 @@
+# mautrix-zalo configuration
+# See https://docs.mau.fi/bridges/ for general bridge config docs
+
+homeserver:
+  address: https://matrix.example.com
+  domain: example.com
+
+appservice:
+  address: http://localhost:29322
+  hostname: 0.0.0.0
+  port: 29322
+  database:
+    type: sqlite3
+    uri: mautrix-zalo.db
+
+bridge:
+  permissions:
+    "*": relay
+    "example.com": user
+    "@admin:example.com": admin
+
+# Zalo network config
+network:
+  sidecar_url: http://sidecar:3500
