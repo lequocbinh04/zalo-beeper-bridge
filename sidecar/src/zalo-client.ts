@@ -198,9 +198,15 @@ export class ZaloClientWrapper {
     }
 
     try {
-      const userInfo = await this.state.api.getUserInfo(userId);
+      const resp = await this.state.api.getUserInfo(userId);
+      // zca-js returns { changed_profiles: { [userId]: ProfileInfo }, unchanged_profiles, phonebook_version }
+      const profile = resp.changed_profiles?.[userId] ?? resp.unchanged_profiles?.[userId] ?? null;
       console.log(`[ZaloClient] Fetched user info for ${userId}`);
-      return userInfo;
+      return {
+        userId,
+        displayName: profile?.displayName || profile?.zaloName || "",
+        avatar: profile?.avatar || "",
+      };
     } catch (error: any) {
       console.error("[ZaloClient] Get user info failed:", error);
       throw error;
@@ -213,9 +219,18 @@ export class ZaloClientWrapper {
     }
 
     try {
-      const groupInfo = await this.state.api.getGroupInfo(groupId);
+      const resp = await this.state.api.getGroupInfo(groupId);
+      // zca-js returns { gridInfoMap: { [groupId]: GroupInfo }, removedsGroup, unchangedsGroup }
+      const info = resp.gridInfoMap?.[groupId] ?? null;
       console.log(`[ZaloClient] Fetched group info for ${groupId}`);
-      return groupInfo;
+      return {
+        groupId,
+        name: info?.name || "",
+        avatar: info?.avt || "",
+        memberIds: info?.memberIds || [],
+        adminIds: info?.adminIds || [],
+        creatorId: info?.creatorId || "",
+      };
     } catch (error: any) {
       console.error("[ZaloClient] Get group info failed:", error);
       throw error;
