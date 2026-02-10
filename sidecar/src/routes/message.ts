@@ -20,7 +20,7 @@ const errorSchema = {
 
 const threadFields = {
   threadId: { type: "string" as const, description: "Chat thread ID" },
-  threadType: { type: "number" as const, enum: [0, 1], description: "0 = User, 1 = Group" },
+  threadType: { type: "number" as const, enum: [0, 1], default: 0, description: "0 = User (default), 1 = Group" },
 };
 
 export async function messageRoutes(
@@ -36,7 +36,7 @@ export async function messageRoutes(
       summary: "Send text message",
       body: {
         type: "object",
-        required: ["msg", "threadId", "threadType"],
+        required: ["msg", "threadId"],
         properties: {
           msg: { type: "string", description: "Message content" },
           ...threadFields,
@@ -57,11 +57,11 @@ export async function messageRoutes(
     },
   }, async (request, reply) => {
     try {
-      const { msg, threadId, threadType, quote } = request.body;
+      const { msg, threadId, threadType = 0, quote } = request.body;
 
-      if (!msg || !threadId || threadType === undefined) {
+      if (!msg || !threadId) {
         return reply.code(400).send({
-          error: "Missing required fields: msg, threadId, threadType",
+          error: "Missing required fields: msg, threadId",
           code: "INVALID_REQUEST",
         });
       }
