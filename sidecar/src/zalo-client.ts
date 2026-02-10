@@ -241,46 +241,54 @@ export class ZaloClientWrapper {
   }
 
   setupListeners(broadcast: BroadcastFn): void {
-    if (!this.zalo) {
-      console.warn("[ZaloClient] Cannot setup listeners - no Zalo instance");
+    if (!this.state.api) {
+      console.warn("[ZaloClient] Cannot setup listeners - no API instance");
       return;
     }
 
+    const listener = this.state.api.listener;
     console.log("[ZaloClient] Setting up event listeners...");
 
-    // Message listener
-    this.zalo.listener.on("message", (message: any) => {
+    listener.on("message", (message: any) => {
       handleMessage(message, broadcast);
     });
 
-    // Reaction listener
-    this.zalo.listener.on("reaction", (reaction: any) => {
+    listener.on("reaction", (reaction: any) => {
       handleReaction(reaction, broadcast);
     });
 
-    // Undo listener
-    this.zalo.listener.on("undo", (undo: any) => {
+    listener.on("undo", (undo: any) => {
       handleUndo(undo, broadcast);
     });
 
-    // Group event listener
-    this.zalo.listener.on("group_event", (event: any) => {
+    listener.on("group_event", (event: any) => {
       handleGroupEvent(event, broadcast);
+    });
+
+    listener.on("connected", () => {
+      console.log("[ZaloClient] Listener connected");
+    });
+
+    listener.on("error", (error: any) => {
+      console.error("[ZaloClient] Listener error:", error);
+    });
+
+    listener.on("closed", (code: number, reason: string) => {
+      console.warn(`[ZaloClient] Listener closed: code=${code}, reason=${reason}`);
     });
 
     console.log("[ZaloClient] Event listeners registered");
 
-    // Start listening
-    this.zalo.listener.start();
+    listener.start();
     console.log("[ZaloClient] Listener started");
   }
 
   disconnect(): void {
-    if (this.zalo) {
+    if (this.state.api) {
       console.log("[ZaloClient] Disconnecting...");
-      this.zalo.listener.stop();
-      this.zalo = null;
+      this.state.api.listener.stop();
     }
+    this.zalo = null;
 
     this.state = {
       api: null,
