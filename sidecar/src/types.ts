@@ -47,7 +47,7 @@ export interface CookieLoginResponse {
 export interface SendTextRequest {
   msg: string;
   threadId: string;
-  threadType: ThreadType;
+  threadType?: ThreadType;
   quote?: string;
 }
 
