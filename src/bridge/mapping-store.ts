@@ -86,6 +86,10 @@ export class MappingStore {
     return this.db.prepare("SELECT thread_id, thread_type, room_id, name FROM portal WHERE room_id = ?").get(roomId) as PortalRow | undefined;
   }
 
+  getAllPortals(): PortalRow[] {
+    return this.db.prepare("SELECT thread_id, thread_type, room_id, name FROM portal").all() as PortalRow[];
+  }
+
   /** True when the bridge itself posted this Matrix event (echo guard for outbound). */
   hasEventId(eventId: string): boolean {
     return this.db.prepare("SELECT 1 FROM message WHERE event_id = ?").get(eventId) !== undefined;

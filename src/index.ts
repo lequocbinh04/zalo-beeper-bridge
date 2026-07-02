@@ -50,7 +50,7 @@ const bridge = createBridge(config, async (event) => {
 ctx.bridge = bridge;
 
 const puppets = new PuppetRegistry(bridge, store, config.matrix.domain, (uid) => zalo.getUserProfile(uid));
-const portals = new PortalManager(bridge, store, puppets, config.matrix.owner);
+const portals = new PortalManager(bridge, store, puppets, config.matrix.owner, config.network);
 const inbound = new InboundHandler({
   bridge,
   store,
@@ -86,7 +86,9 @@ zalo.on("reaction", (ev) => void presence.handleReaction(ev).catch((err) => cons
 // Appservice MUST be up before the Zalo listener: intents throw pre-initialise,
 // and the old_messages replay burst arrives immediately on ws connect
 await startBridge(bridge, config);
-await ensureNetworkIdentity(bridge);
+await ensureNetworkIdentity(bridge, config.network);
+// Backfill the network chip on portals created before branding existed
+void portals.rebrandExistingPortals().catch((err) => console.warn("portal rebrand failed:", err));
 
 // Silent cookie re-login at startup; QR (via 'login' command) when absent/expired
 if (await zalo.loginFromSavedCredentials()) {

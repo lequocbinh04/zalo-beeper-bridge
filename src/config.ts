@@ -23,6 +23,11 @@ const configSchema = z.object({
     dbPath: z.string().min(1).default("bridge.db"),
     mediaMaxBytes: z.number().int().positive().default(10 * 1024 * 1024),
   }).default({ dbPath: "bridge.db", mediaMaxBytes: 10 * 1024 * 1024 }),
+  // How the bridge presents itself as a network in Beeper (bot name + logo + chat network chip)
+  network: z.object({
+    name: z.string().min(1).default("Zalo"),
+    logoPath: z.string().min(1).default("assets/zalo-logo.png"),
+  }).default({ name: "Zalo", logoPath: "assets/zalo-logo.png" }),
   logging: z.object({
     level: z.enum(["debug", "info", "warn", "error"]).default("info"),
   }).default({ level: "info" }),

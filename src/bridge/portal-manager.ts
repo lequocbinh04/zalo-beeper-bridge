@@ -2,7 +2,7 @@
 // Creation is serialized per-thread with an in-flight promise map so concurrent
 // messages from a new thread cannot provision duplicate rooms.
 import type { Bridge } from "matrix-appservice-bridge";
-import { tagPortalNetwork } from "../matrix/network-branding.ts";
+import { tagPortalNetwork, type NetworkBranding } from "../matrix/network-branding.ts";
 import type { MappingStore, PortalRow } from "./mapping-store.ts";
 import type { PuppetRegistry } from "./puppet-registry.ts";
 import type { ZaloThreadType } from "../zalo/types.ts";
@@ -22,17 +22,28 @@ export class PortalManager {
   private readonly store: MappingStore;
   private readonly puppets: PuppetRegistry;
   private readonly ownerUserId: string;
+  private readonly branding: NetworkBranding;
   private readonly inFlight = new Map<string, Promise<PortalRow>>();
   /** roomIds where the owner's auto-join was ensured this run */
   private readonly ownerJoined = new Set<string>();
   /** "roomId|ghostMxid" pairs whose join + room profile were ensured this run */
   private readonly ghostJoined = new Set<string>();
 
-  constructor(bridge: Bridge, store: MappingStore, puppets: PuppetRegistry, ownerUserId: string) {
+  constructor(bridge: Bridge, store: MappingStore, puppets: PuppetRegistry, ownerUserId: string, branding: NetworkBranding) {
     this.bridge = bridge;
     this.store = store;
     this.puppets = puppets;
     this.ownerUserId = ownerUserId;
+    this.branding = branding;
+  }
+
+  /** Re-emit the network state event on every existing portal (branding backfill). */
+  async rebrandExistingPortals(): Promise<void> {
+    for (const portal of this.store.getAllPortals()) {
+      // State must be sent by a member with power: the ghost created DMs, the bot created groups
+      const intent = portal.thread_type === "user" ? this.puppets.intentFor(portal.thread_id) : this.bridge.getIntent();
+      await tagPortalNetwork(intent, portal.room_id, portal.name ?? this.branding.name, this.branding);
+    }
   }
 
   isPortalRoom(roomId: string): boolean {
@@ -97,7 +108,9 @@ export class PortalManager {
       row = { thread_id: ctx.threadId, thread_type: "group", room_id, name: groupName };
     }
     this.store.insertPortal(row);
-    await tagPortalNetwork(this.bridge, row.room_id, row.name ?? "Zalo chat");
+    // Network state must be sent by the room creator (ghost for DM, bot for group)
+    const brandIntent = ctx.threadType === "user" ? this.puppets.intentFor(ctx.senderId) : this.bridge.getIntent();
+    await tagPortalNetwork(brandIntent, row.room_id, row.name ?? this.branding.name, this.branding);
     await this.ensureOwnerJoined(row.room_id);
     return row;
   }

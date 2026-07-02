@@ -45,7 +45,7 @@ afterEach(() => {
 describe("PortalManager", () => {
   it("creates a DM portal once and reuses it afterwards", async () => {
     const { bridge, createRoom } = mockBridge();
-    const portals = new PortalManager(bridge, store, new PuppetRegistry(bridge, store, "beeper.local"), OWNER);
+    const portals = new PortalManager(bridge, store, new PuppetRegistry(bridge, store, "beeper.local"), OWNER, { name: "Zalo", logoPath: "assets/zalo-logo.png" });
 
     const first = await portals.getOrCreatePortal({ threadId: "t1", threadType: "user", senderId: "u1", senderName: "Alice" });
     const second = await portals.getOrCreatePortal({ threadId: "t1", threadType: "user", senderId: "u1" });
@@ -59,7 +59,7 @@ describe("PortalManager", () => {
 
   it("serializes CONCURRENT creation for the same thread (no duplicate rooms)", async () => {
     const { bridge, createRoom } = mockBridge();
-    const portals = new PortalManager(bridge, store, new PuppetRegistry(bridge, store, "beeper.local"), OWNER);
+    const portals = new PortalManager(bridge, store, new PuppetRegistry(bridge, store, "beeper.local"), OWNER, { name: "Zalo", logoPath: "assets/zalo-logo.png" });
 
     const [a, b, c] = await Promise.all([
       portals.getOrCreatePortal({ threadId: "t1", threadType: "user", senderId: "u1" }),
@@ -72,7 +72,7 @@ describe("PortalManager", () => {
 
   it("uses resolved group name, falling back to a placeholder", async () => {
     const { bridge, createRoom } = mockBridge();
-    const portals = new PortalManager(bridge, store, new PuppetRegistry(bridge, store, "beeper.local"), OWNER);
+    const portals = new PortalManager(bridge, store, new PuppetRegistry(bridge, store, "beeper.local"), OWNER, { name: "Zalo", logoPath: "assets/zalo-logo.png" });
 
     const named = await portals.getOrCreatePortal({
       threadId: "g1",
@@ -95,7 +95,7 @@ describe("PortalManager", () => {
   it("skips creation entirely when the portal is already persisted (restart)", async () => {
     store.insertPortal({ thread_id: "t9", thread_type: "user", room_id: "!existing:x", name: "Bob" });
     const { bridge, createRoom } = mockBridge();
-    const portals = new PortalManager(bridge, store, new PuppetRegistry(bridge, store, "beeper.local"), OWNER);
+    const portals = new PortalManager(bridge, store, new PuppetRegistry(bridge, store, "beeper.local"), OWNER, { name: "Zalo", logoPath: "assets/zalo-logo.png" });
 
     const portal = await portals.getOrCreatePortal({ threadId: "t9", threadType: "user", senderId: "u9" });
     expect(portal.room_id).toBe("!existing:x");
@@ -105,7 +105,7 @@ describe("PortalManager", () => {
   it("invites the ghost via bot when direct join fails (group first-speak)", async () => {
     const { bridge, intent } = mockBridge();
     intent.join.mockRejectedValueOnce(new Error("not invited"));
-    const portals = new PortalManager(bridge, store, new PuppetRegistry(bridge, store, "beeper.local"), OWNER);
+    const portals = new PortalManager(bridge, store, new PuppetRegistry(bridge, store, "beeper.local"), OWNER, { name: "Zalo", logoPath: "assets/zalo-logo.png" });
 
     await portals.ensureGhostInRoom("u5", "!g:x");
     expect(intent.invite).toHaveBeenCalledWith("!g:x", "@sh-zalo_u5:beeper.local");

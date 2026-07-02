@@ -22,3 +22,8 @@ bridge:
   dbPath: bridge.db
   # Inbound media size cap in bytes (default 10MB)
   mediaMaxBytes: 10485760
+
+network:
+  # Display name + logo shown in Beeper (the internal id stays the bbctl name, e.g. sh-zalo)
+  name: Zalo
+  logoPath: assets/zalo-logo.png
