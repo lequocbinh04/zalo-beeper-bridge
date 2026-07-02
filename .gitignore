@@ -3,6 +3,10 @@ dist/
 
 # secrets & sessions — never commit
 *.session.json
+*.key
+.*.tmp
+zalo-creds*
+spike/creds*
 spike/qr.png
 spike/raw-events.ndjson
 config.yaml
