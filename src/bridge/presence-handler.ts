@@ -2,7 +2,9 @@
 // One-way only — zca-js exposes no API to push seen/typing back to Zalo.
 import type { MappingStore } from "./mapping-store.ts";
 import type { PuppetRegistry } from "./puppet-registry.ts";
-import type { ZaloSeenEvent, ZaloTypingEvent } from "../zalo/types.ts";
+import { zaloToEmoji } from "../zalo/reaction-map.ts";
+import type { ZaloClient } from "../zalo/zalo-client.ts";
+import type { ZaloReactionEvent, ZaloSeenEvent, ZaloTypingEvent } from "../zalo/types.ts";
 
 const TYPING_STOP_MS = 8_000;
 
@@ -14,10 +16,39 @@ export class PresenceHandler {
   /** auto-stop timers keyed by roomId|uid so repeated typing events extend, not stack */
   private readonly typingTimers = new Map<string, NodeJS.Timeout>();
 
-  constructor(store: MappingStore, puppets: PuppetRegistry, getOwnZaloId: () => string | null) {
+  private readonly zalo: ZaloClient;
+  private readonly ownerUserId: string;
+
+  constructor(store: MappingStore, puppets: PuppetRegistry, zalo: ZaloClient, ownerUserId: string, getOwnZaloId: () => string | null) {
     this.store = store;
     this.puppets = puppets;
+    this.zalo = zalo;
+    this.ownerUserId = ownerUserId;
     this.getOwnZaloId = getOwnZaloId;
+  }
+
+  /** Owner read a portal in Beeper → mark seen on Zalo (m.receipt EDU). */
+  async handleOwnerReceipt(roomId: string, content: Record<string, unknown>): Promise<void> {
+    const portal = this.store.getPortalByRoom(roomId);
+    if (!portal) return;
+    // Find the most recent read event id belonging to the owner
+    let readEventId: string | null = null;
+    for (const [eventId, receipts] of Object.entries(content)) {
+      const readBy = (receipts as { "m.read"?: Record<string, unknown> })["m.read"];
+      if (readBy && this.ownerUserId in readBy) readEventId = eventId;
+    }
+    if (!readEventId) return;
+    const target = this.store.getZaloTargetByEventId(readEventId);
+    if (!target?.cliMsgId) return;
+    await this.zalo.sendSeen(portal.thread_id, portal.thread_type, target.zaloMsgId, target.cliMsgId);
+  }
+
+  /** Owner typing in a portal → show typing on Zalo (m.typing EDU). */
+  async handleOwnerTyping(roomId: string, userIds: string[]): Promise<void> {
+    if (!userIds.includes(this.ownerUserId)) return;
+    const portal = this.store.getPortalByRoom(roomId);
+    if (!portal) return;
+    await this.zalo.sendTypingToZalo(portal.thread_id, portal.thread_type);
   }
 
   async handleSeen(event: ZaloSeenEvent): Promise<void> {
@@ -35,6 +66,19 @@ export class PresenceHandler {
         .sendReadReceipt(portal.room_id, eventId)
         .catch((err: Error) => console.warn(`read receipt ${uid}@${portal.room_id} failed:`, err.message));
     }
+  }
+
+  /** Inbound reaction (Zalo→Beeper): ghost annotates the bridged Matrix event. */
+  async handleReaction(event: ZaloReactionEvent): Promise<void> {
+    const target = this.store.getEventByZaloMsgId(event.targetMsgId);
+    if (!target?.eventId) return; // reacted-to message not bridged
+    if (!event.icon) return; // reaction removal — Matrix has no clean un-react via appservice; skip
+    const intent = this.puppets.intentFor(event.senderId);
+    await intent
+      .sendEvent(target.roomId, "m.reaction", {
+        "m.relates_to": { rel_type: "m.annotation", event_id: target.eventId, key: zaloToEmoji(event.icon) },
+      })
+      .catch((err: Error) => console.warn("inbound reaction failed:", err.message));
   }
 
   async handleTyping(event: ZaloTypingEvent): Promise<void> {

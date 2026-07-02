@@ -13,6 +13,22 @@ interface PendingEcho {
 
 export class EchoSuppressor {
   private readonly pending = new Map<string, PendingEcho[]>();
+  // Media echoes match on URL (images have no pre-send msgId) — url → expiry
+  private readonly pendingMedia = new Map<string, number>();
+
+  /** Register the URLs of an image we just sent so its selfListen echo is dropped. */
+  expectMedia(urls: string[]): void {
+    const expiry = Date.now() + TTL_MS;
+    for (const url of urls) if (url) this.pendingMedia.set(url, expiry);
+  }
+
+  /** True when this inbound media URL is the echo of something we just sent. */
+  consumeMedia(url: string): boolean {
+    const expiry = this.pendingMedia.get(url);
+    if (expiry === undefined) return false;
+    this.pendingMedia.delete(url);
+    return expiry > Date.now();
+  }
 
   /** Call right before sending to Zalo. */
   expect(threadId: string, text: string): void {

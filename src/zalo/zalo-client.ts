@@ -2,11 +2,12 @@
 // Contains login lifecycle, listener resilience, normalization, and rate-limited sends.
 import { EventEmitter } from "node:events";
 import { Zalo, LoginQRCallbackEventType, ThreadType, type API } from "zca-js";
+import { emojiToZalo } from "./reaction-map.ts";
 import { loadCredentials, saveCredentials, clearCredentials } from "./credential-store.ts";
 import { normalizeZaloMessage } from "./event-normalizer.ts";
 import { ListenerManager } from "./listener-manager.ts";
 import { RateLimiter } from "./rate-limiter.ts";
-import type { RawZaloMessage, ZaloMessage, ZaloQuotePayload, ZaloSeenEvent, ZaloThreadType, ZaloTypingEvent } from "./types.ts";
+import type { RawZaloMessage, ZaloMessage, ZaloQuotePayload, ZaloReactionEvent, ZaloSeenEvent, ZaloThreadType, ZaloTypingEvent } from "./types.ts";
 
 export interface ZaloClientOptions {
   credsPath: string;
@@ -17,6 +18,7 @@ interface ZaloClientEvents {
   message: [message: ZaloMessage];
   seen: [event: ZaloSeenEvent];
   typing: [event: ZaloTypingEvent];
+  reaction: [event: ZaloReactionEvent];
   connected: [];
   reconnecting: [attempt: number, delayMs: number];
   dead: [reason: string];
@@ -161,6 +163,22 @@ export class ZaloClient extends EventEmitter<ZaloClientEvents> {
         uid: String(t.data.uid),
       });
     });
+    this.api.listener.on("reaction", (reaction) => {
+      const r = reaction as unknown as {
+        threadId: string;
+        isGroup: boolean;
+        data: { uidFrom: string; content: { rMsg?: Array<{ gMsgID: string }>; rIcon: string } };
+      };
+      const targetMsgId = r?.data?.content?.rMsg?.[0]?.gMsgID;
+      if (!targetMsgId || !r.data.uidFrom) return;
+      this.emit("reaction", {
+        threadId: r.threadId,
+        threadType: r.isGroup ? "group" : "user",
+        senderId: String(r.data.uidFrom),
+        targetMsgId: String(targetMsgId),
+        icon: r.data.content.rIcon ?? "",
+      });
+    });
     this.listenerManager.start(this.api);
   }
 
@@ -250,6 +268,73 @@ export class ZaloClient extends EventEmitter<ZaloClientEvents> {
       console.warn(`getGroupInfo(${threadId}) failed:`, (err as Error).message);
       return null;
     }
+  }
+
+  /** React to a Zalo message (Beeper→Zalo). */
+  async react(threadId: string, threadType: ZaloThreadType, msgId: string, cliMsgId: string, emoji: string): Promise<void> {
+    const api = this.api;
+    if (!api) throw new Error("Not logged in");
+    await this.rateLimiter.acquire();
+    await api.addReaction(emojiToZalo(emoji), {
+      data: { msgId, cliMsgId },
+      threadId,
+      type: threadType === "group" ? ThreadType.Group : ThreadType.User,
+    });
+  }
+
+  /** Recall (undo) a message we sent (Beeper→Zalo). Requires our own cliMsgId. */
+  async recall(threadId: string, threadType: ZaloThreadType, msgId: string, cliMsgId: string): Promise<void> {
+    const api = this.api;
+    if (!api) throw new Error("Not logged in");
+    await this.rateLimiter.acquire();
+    await api.undo({ msgId, cliMsgId }, threadId, threadType === "group" ? ThreadType.Group : ThreadType.User);
+  }
+
+  /** Mark a message seen on Zalo (Beeper read → Zalo "seen"). Best-effort. */
+  async sendSeen(threadId: string, threadType: ZaloThreadType, msgId: string, cliMsgId: string): Promise<void> {
+    const api = this.api;
+    if (!api) return;
+    try {
+      await api.sendSeenEvent({ msgId, cliMsgId, uidFrom: threadId } as never, threadType === "group" ? ThreadType.Group : ThreadType.User);
+    } catch (err) {
+      console.warn("sendSeenEvent failed:", (err as Error).message);
+    }
+  }
+
+  /** Show "typing" on Zalo (Beeper owner typing → Zalo). Best-effort. */
+  async sendTypingToZalo(threadId: string, threadType: ZaloThreadType): Promise<void> {
+    const api = this.api;
+    if (!api) return;
+    try {
+      await api.sendTypingEvent(threadId, threadType === "group" ? ThreadType.Group : ThreadType.User);
+    } catch {
+      // typing is fire-and-forget
+    }
+  }
+
+  /** Send an image (Beeper→Zalo) as an attachment. Returns the CDN urls for echo suppression. */
+  async sendImage(
+    threadId: string,
+    threadType: ZaloThreadType,
+    data: Buffer,
+    filename: `${string}.${string}`,
+    width: number,
+    height: number,
+  ): Promise<string[]> {
+    const api = this.api;
+    if (!api) throw new Error("Not logged in");
+    await this.rateLimiter.acquire();
+    const res = await api.uploadAttachment(
+      [{ data, filename, metadata: { totalSize: data.byteLength, width, height } }],
+      threadId,
+      threadType === "group" ? ThreadType.Group : ThreadType.User,
+    );
+    const urls: string[] = [];
+    for (const item of res) {
+      const img = item as { normalUrl?: string; hdUrl?: string; thumbUrl?: string };
+      for (const u of [img.normalUrl, img.hdUrl, img.thumbUrl]) if (u) urls.push(u);
+    }
+    return urls;
   }
 
   /**

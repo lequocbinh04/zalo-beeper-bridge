@@ -12,7 +12,7 @@ export interface PortalRow {
 
 export type MessageDirection = "inbound" | "outbound";
 
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 
 export class MappingStore {
   private readonly db: Database.Database;
@@ -32,6 +32,8 @@ export class MappingStore {
       if (current < 1) this.migrateV1();
       if (current < 2) this.db.exec("ALTER TABLE puppet ADD COLUMN avatar_url TEXT");
       if (current < 3) this.db.exec("ALTER TABLE message ADD COLUMN quote_json TEXT");
+      // cliMsgId is required by Zalo reaction/undo APIs; store per inbound message
+      if (current < 4) this.db.exec("ALTER TABLE message ADD COLUMN cli_msg_id TEXT");
       this.db.pragma(`user_version = ${SCHEMA_VERSION}`);
     })();
   }
@@ -128,10 +130,11 @@ export class MappingStore {
     eventId: string | null,
     direction: MessageDirection,
     quoteJson: string | null = null,
+    cliMsgId: string | null = null,
   ): boolean {
     const result = this.db
-      .prepare("INSERT OR IGNORE INTO message (zalo_msg_id, room_id, event_id, direction, ts, quote_json) VALUES (?, ?, ?, ?, ?, ?)")
-      .run(zaloMsgId, roomId, eventId, direction, Date.now(), quoteJson);
+      .prepare("INSERT OR IGNORE INTO message (zalo_msg_id, room_id, event_id, direction, ts, quote_json, cli_msg_id) VALUES (?, ?, ?, ?, ?, ?, ?)")
+      .run(zaloMsgId, roomId, eventId, direction, Date.now(), quoteJson, cliMsgId);
     if (result.changes === 0 && eventId) {
       // Echo-before-response ordering records msgId with a null event first;
       // fill it in when the real event id arrives so read receipts can map
@@ -148,6 +151,22 @@ export class MappingStore {
       | { quote_json: string | null }
       | undefined;
     return row?.quote_json ?? null;
+  }
+
+  /** Zalo target ids for a Matrix event — reaction/undo need both msgId and cliMsgId. */
+  getZaloTargetByEventId(eventId: string): { zaloMsgId: string; cliMsgId: string | null; roomId: string } | null {
+    const row = this.db.prepare("SELECT zalo_msg_id, cli_msg_id, room_id FROM message WHERE event_id = ?").get(eventId) as
+      | { zalo_msg_id: string; cli_msg_id: string | null; room_id: string }
+      | undefined;
+    return row ? { zaloMsgId: row.zalo_msg_id, cliMsgId: row.cli_msg_id, roomId: row.room_id } : null;
+  }
+
+  /** Matrix event for a Zalo msgId + who bridged it (inbound reaction → annotate). */
+  getEventByZaloMsgId(zaloMsgId: string): { eventId: string | null; roomId: string } | null {
+    const row = this.db.prepare("SELECT event_id, room_id FROM message WHERE zalo_msg_id = ?").get(zaloMsgId) as
+      | { event_id: string | null; room_id: string }
+      | undefined;
+    return row ? { eventId: row.event_id, roomId: row.room_id } : null;
   }
 
   hasMessage(zaloMsgId: string): boolean {

@@ -21,8 +21,21 @@ export interface ZaloMessage {
   /** true when sent by the bridged account itself (any device) — zca-js selfListen */
   isSelf: boolean;
   content: ZaloContent;
+  /** client message id — needed by Zalo reaction/undo APIs */
+  cliMsgId?: string;
   /** Raw fields needed to quote this message later (Matrix reply → Zalo quote) */
   quotable?: ZaloQuotePayload;
+}
+
+/** A contact reacted to a message. */
+export interface ZaloReactionEvent {
+  threadId: string;
+  threadType: ZaloThreadType;
+  senderId: string;
+  /** the message being reacted to */
+  targetMsgId: string;
+  /** Zalo reaction icon code ("/-heart", ":>", ... ; "" = removed) */
+  icon: string;
 }
 
 /** Subset of TMessage that zca-js sendMessage accepts as `quote`. */

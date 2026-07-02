@@ -24,8 +24,6 @@ export interface InboundHandlerDeps {
 export class InboundHandler {
   private readonly deps: InboundHandlerDeps;
   private readonly threadQueues = new Map<string, Promise<void>>();
-  /** hungryserv double-puppeting probe result (null = untested) */
-  private canDoublePuppet: boolean | null = null;
 
   constructor(deps: InboundHandlerDeps) {
     this.deps = deps;
@@ -47,7 +45,9 @@ export class InboundHandler {
     if (this.deps.store.hasMessage(msg.msgId)) return; // duplicate listener event
 
     // Our own send echoed back by selfListen → already visible in Beeper, don't repost
-    if (msg.isSelf && msg.content.kind === "text" && this.deps.echo.consume(msg.threadId, msg.content.text)) {
+    const isTextEcho = msg.isSelf && msg.content.kind === "text" && this.deps.echo.consume(msg.threadId, msg.content.text);
+    const isMediaEcho = msg.isSelf && msg.content.kind === "photo" && this.deps.echo.consumeMedia(msg.content.url);
+    if (isTextEcho || isMediaEcho) {
       this.deps.store.recordMessage(msg.msgId, this.deps.store.getPortalByThread(msg.threadId)?.room_id ?? "", null, "outbound");
       return;
     }
@@ -60,12 +60,7 @@ export class InboundHandler {
       resolveGroupName: this.deps.resolveGroupName,
     });
 
-    const intent = msg.isSelf ? await this.intentForSelf() : await this.intentForSender(msg, portal.room_id);
-    if (!intent) {
-      // Own message but double-puppeting unavailable → skip (documented MVP limitation)
-      this.deps.store.recordMessage(msg.msgId, portal.room_id, null, "inbound");
-      return;
-    }
+    const intent = msg.isSelf ? this.intentForSelf() : await this.intentForSender(msg, portal.room_id);
 
     let eventId: string | null = null;
     switch (msg.content.kind) {
@@ -114,6 +109,7 @@ export class InboundHandler {
       eventId,
       "inbound",
       msg.quotable ? JSON.stringify(msg.quotable) : null,
+      msg.cliMsgId ?? null,
     );
   }
 
@@ -126,24 +122,20 @@ export class InboundHandler {
   }
 
   /**
-   * Own messages sent from the phone: try double-puppeting as the owner
-   * (hungryserv is single-tenant, so the as_token may be allowed to act as the
-   * owner). Probed once; on 403 these messages are skipped permanently.
+   * Own messages sent from the phone: double-puppet as the owner so they appear
+   * in Beeper on the right-hand side. The owner is a real account OUTSIDE the
+   * appservice namespace, so we must NOT call ensureRegistered (that 403s / tries
+   * to register an existing external user). hungryserv lets the as_token act as
+   * the owner directly (verified: whoami?user_id=owner → 200), so we just use the
+   * intent and let the first real send confirm/deny capability.
    */
-  private async intentForSelf() {
-    if (this.canDoublePuppet === false) return null;
+  private intentForSelf() {
     const intent = this.deps.bridge.getIntent(this.deps.ownerUserId);
-    if (this.canDoublePuppet === null) {
-      try {
-        await intent.ensureRegistered();
-        this.canDoublePuppet = true;
-        console.log("[bridge] double-puppeting available — own phone messages will bridge");
-      } catch {
-        this.canDoublePuppet = false;
-        console.warn("[bridge] double-puppeting unavailable — own phone messages will NOT appear in Beeper");
-        return null;
-      }
-    }
+    // Owner is a real account outside the @sh-zalo_* namespace: registering it
+    // returns M_EXCLUSIVE (not swallowed for non-bot users) and disables the whole
+    // path. Mark it pre-registered so ensureRegistered no-ops; the as_token can
+    // still impersonate the owner to send (hungryserv single-tenant).
+    (intent as unknown as { opts: { registered: boolean } }).opts.registered = true;
     return intent;
   }
 }

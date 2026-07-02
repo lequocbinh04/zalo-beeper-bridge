@@ -56,6 +56,7 @@ export function normalizeZaloMessage(raw: RawZaloMessage): ZaloMessage | null {
     timestamp: Number(d.ts) || Date.now(),
     isSelf: raw.isSelf === true,
     content,
+    cliMsgId: d.cliMsgId != null ? String(d.cliMsgId) : undefined,
     // Text messages can be quoted later (Matrix reply → Zalo quote)
     quotable:
       content.kind === "text"

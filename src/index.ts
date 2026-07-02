@@ -36,7 +36,13 @@ const echo = new EchoSuppressor();
 const bridge = createBridge(config, async (event) => {
   // Portal rooms carry conversation traffic (outbound); everything else is bot commands
   if (event.room_id && store.isPortalRoom(event.room_id)) {
-    await outbound.handle(event);
+    if (event.type === "m.receipt") {
+      await presence.handleOwnerReceipt(event.room_id, event.content as Record<string, unknown>);
+    } else if (event.type === "m.typing") {
+      await presence.handleOwnerTyping(event.room_id, (event.content as { user_ids?: string[] }).user_ids ?? []);
+    } else {
+      await outbound.handle(event);
+    }
     return;
   }
   await handleBotEvent(ctx, event);
@@ -56,7 +62,7 @@ const inbound = new InboundHandler({
   resolveGroupName: (threadId) => zalo.getGroupName(threadId),
   resolveStickerUrl: (stickerId) => zalo.getStickerImageUrl(stickerId),
 });
-const outbound = new OutboundHandler({ bridge, store, zalo, echo, ownerUserId: config.matrix.owner });
+const outbound = new OutboundHandler({ bridge, store, zalo, echo, ownerUserId: config.matrix.owner, mediaMaxBytes: config.bridge.mediaMaxBytes });
 const sync = new SyncManager({ zalo, portals, inbound });
 ctx.runSync = () => sync.run();
 
@@ -72,9 +78,10 @@ zalo.on("connected", () => console.log("[zalo] listener connected"));
 zalo.on("reconnecting", (attempt, delayMs) => console.warn(`[zalo] listener reconnecting (attempt ${attempt}, in ${delayMs}ms)`));
 zalo.on("dead", (reason) => console.error(`[zalo] listener DEAD: ${reason} — send 'login' in the management room`));
 zalo.on("message", (msg) => inbound.handle(msg));
-const presence = new PresenceHandler(store, puppets, () => zalo.ownId);
+const presence = new PresenceHandler(store, puppets, zalo, config.matrix.owner, () => zalo.ownId);
 zalo.on("seen", (ev) => void presence.handleSeen(ev).catch((err) => console.warn("seen handling failed:", err)));
 zalo.on("typing", (ev) => void presence.handleTyping(ev).catch((err) => console.warn("typing handling failed:", err)));
+zalo.on("reaction", (ev) => void presence.handleReaction(ev).catch((err) => console.warn("reaction handling failed:", err)));
 
 // Appservice MUST be up before the Zalo listener: intents throw pre-initialise,
 // and the old_messages replay burst arrives immediately on ws connect

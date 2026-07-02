@@ -1,16 +1,18 @@
-// Outbound pipeline: owner's Matrix message in a portal room → Zalo thread.
+// Outbound pipeline: owner's Matrix events in a portal room → Zalo thread.
+// Handles text (+reply quote, +edit), images, reactions, and recalls.
 // Guards against two echo loops:
 //   1. bridge-posted events (own phone messages double-puppeted as owner) — skipped via event_id
 //   2. selfListen re-delivery of what we just sent — registered with EchoSuppressor
+import { imageSize } from "image-size";
 import type { Bridge, WeakEvent } from "matrix-appservice-bridge";
+import type { EchoSuppressor } from "./echo-suppressor.ts";
+import type { MappingStore, PortalRow } from "./mapping-store.ts";
+import type { ZaloClient } from "../zalo/zalo-client.ts";
 
 /** Removes the Matrix rich-reply fallback ("> <@user> quoted text" lines + blank line). */
 export function stripReplyFallback(body: string): string {
   return body.replace(/^(?:>.*\n)+\n?/, "");
 }
-import type { EchoSuppressor } from "./echo-suppressor.ts";
-import type { MappingStore } from "./mapping-store.ts";
-import type { ZaloClient } from "../zalo/zalo-client.ts";
 
 export interface OutboundHandlerDeps {
   bridge: Bridge;
@@ -18,6 +20,7 @@ export interface OutboundHandlerDeps {
   zalo: ZaloClient;
   echo: EchoSuppressor;
   ownerUserId: string;
+  mediaMaxBytes: number;
 }
 
 export class OutboundHandler {
@@ -27,27 +30,35 @@ export class OutboundHandler {
     this.deps = deps;
   }
 
-  /** Returns true when the event was a portal message this handler owns. */
+  /** Returns true when the event belonged to a portal room (handled or intentionally ignored). */
   async handle(event: WeakEvent): Promise<boolean> {
-    if (event.type !== "m.room.message" || !event.room_id) return false;
+    if (!event.room_id) return false;
     const portal = this.deps.store.getPortalByRoom(event.room_id);
     if (!portal) return false;
 
-    // Only the owner's own typing is bridged outbound
+    // Reactions and redactions are owner-only signals against a bridged message
+    if (event.type === "m.reaction") return this.handleReaction(event, portal);
+    if (event.type === "m.room.redaction") return this.handleRedaction(event, portal);
+    if (event.type !== "m.room.message") return true;
+
+    // Only the owner's own messages bridge outbound; skip bridge-posted echoes
     if (event.sender !== this.deps.ownerUserId) return true;
-    // Skip events the bridge itself posted (double-puppeted phone messages)
     if (event.event_id && this.deps.store.hasEventId(event.event_id)) return true;
 
     const content = event.content as {
       msgtype?: string;
       body?: string;
+      url?: string;
       "m.new_content"?: { body?: string };
       "m.relates_to"?: { rel_type?: string; event_id?: string; "m.in_reply_to"?: { event_id?: string } };
     };
+
+    if (content.msgtype === "m.image" && content.url) {
+      await this.handleImage(event, portal, content.url, content.body);
+      return true;
+    }
     if (content.msgtype !== "m.text" || !content.body) {
-      await this.deps.bridge
-        .getIntent()
-        .sendMessage(event.room_id, { msgtype: "m.notice", body: "[bridge] only text is supported outbound so far" });
+      await this.notice(event.room_id, "[bridge] this message type is not supported outbound yet");
       return true;
     }
 
@@ -81,11 +92,69 @@ export class OutboundHandler {
       );
       if (msgId) this.deps.store.recordMessage(msgId, event.room_id, event.event_id ?? null, "outbound");
     } catch (err) {
-      this.deps.echo.cancel(portal.thread_id, body); // don't swallow a future identical phone message
-      await this.deps.bridge
-        .getIntent()
-        .sendMessage(event.room_id, { msgtype: "m.notice", body: `⚠ Failed to deliver to Zalo: ${(err as Error).message}` });
+      this.deps.echo.cancel(portal.thread_id, body);
+      await this.notice(event.room_id, `⚠ Failed to deliver to Zalo: ${(err as Error).message}`);
     }
     return true;
+  }
+
+  private async handleImage(event: WeakEvent, portal: PortalRow, mxcUrl: string, filenameBody?: string): Promise<void> {
+    if (event.sender !== this.deps.ownerUserId) return;
+    if (event.event_id && this.deps.store.hasEventId(event.event_id)) return;
+    try {
+      const { data, contentType } = await this.deps.bridge.getIntent().matrixClient.downloadContent(mxcUrl);
+      if (data.byteLength > this.deps.mediaMaxBytes) throw new Error("image exceeds size cap");
+      let width = 0;
+      let height = 0;
+      try {
+        const dim = imageSize(data);
+        width = dim.width ?? 0;
+        height = dim.height ?? 0;
+      } catch {
+        // dimensions optional
+      }
+      const ext = (contentType?.split("/")[1] ?? "jpg").split(";")[0];
+      const filename = `${(filenameBody ?? "image").replace(/[^a-zA-Z0-9._-]/g, "_")}.${ext}` as `${string}.${string}`;
+      const urls = await this.deps.zalo.sendImage(portal.thread_id, portal.thread_type, data, filename, width, height);
+      this.deps.echo.expectMedia(urls); // drop the selfListen echo of our own image
+    } catch (err) {
+      await this.notice(event.room_id!, `⚠ Failed to send image to Zalo: ${(err as Error).message}`);
+    }
+  }
+
+  private async handleReaction(event: WeakEvent, portal: PortalRow): Promise<boolean> {
+    if (event.sender !== this.deps.ownerUserId) return true;
+    const relates = (event.content as { "m.relates_to"?: { event_id?: string; key?: string } })["m.relates_to"];
+    if (!relates?.event_id || !relates.key) return true;
+    const target = this.deps.store.getZaloTargetByEventId(relates.event_id);
+    if (!target?.cliMsgId) return true; // can only react to messages we have full ids for
+    try {
+      await this.deps.zalo.react(portal.thread_id, portal.thread_type, target.zaloMsgId, target.cliMsgId, relates.key);
+    } catch (err) {
+      console.warn("outbound reaction failed:", (err as Error).message);
+    }
+    return true;
+  }
+
+  private async handleRedaction(event: WeakEvent, portal: PortalRow): Promise<boolean> {
+    if (event.sender !== this.deps.ownerUserId) return true;
+    const redacts = (event as { redacts?: string }).redacts ?? (event.content as { redacts?: string }).redacts;
+    if (!redacts) return true;
+    const target = this.deps.store.getZaloTargetByEventId(redacts);
+    // Zalo can only recall our OWN messages, which need the cliMsgId we generated
+    if (!target?.cliMsgId) {
+      await this.notice(portal.room_id, "[bridge] can't recall this on Zalo (only messages sent from Beeper can be recalled)");
+      return true;
+    }
+    try {
+      await this.deps.zalo.recall(portal.thread_id, portal.thread_type, target.zaloMsgId, target.cliMsgId);
+    } catch (err) {
+      await this.notice(portal.room_id, `⚠ Zalo recall failed: ${(err as Error).message}`);
+    }
+    return true;
+  }
+
+  private async notice(roomId: string, body: string): Promise<void> {
+    await this.deps.bridge.getIntent().sendMessage(roomId, { msgtype: "m.notice", body });
   }
 }

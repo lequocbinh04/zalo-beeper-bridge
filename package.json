@@ -16,6 +16,7 @@
   "type": "module",
   "dependencies": {
     "better-sqlite3": "12.11.1",
+    "image-size": "2.0.2",
     "js-yaml": "5.2.1",
     "matrix-appservice-bridge": "11.2.0",
     "zca-js": "2.1.2",
