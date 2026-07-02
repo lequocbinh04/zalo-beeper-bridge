@@ -1,5 +1,6 @@
 // Zalo uid → Matrix ghost (@sh-zalo_<uid>:domain): registration + displayname sync.
 import type { Bridge, Intent } from "matrix-appservice-bridge";
+import { fetchMediaCapped } from "./media-handler.ts";
 import type { MappingStore } from "./mapping-store.ts";
 
 export const GHOST_PREFIX = "sh-zalo_";
@@ -50,10 +51,7 @@ export class PuppetRegistry {
   private async syncAvatar(zaloUid: string, intent: Intent): Promise<void> {
     const profile = await this.resolveProfile!(zaloUid);
     if (!profile?.avatarUrl) return;
-    const response = await fetch(profile.avatarUrl);
-    if (!response.ok) throw new Error(`avatar download HTTP ${response.status}`);
-    const buffer = Buffer.from(await response.arrayBuffer());
-    const mimetype = response.headers.get("content-type")?.split(";")[0] ?? "image/jpeg";
+    const { buffer, mimetype } = await fetchMediaCapped(profile.avatarUrl, 5 * 1024 * 1024);
     const mxc = await intent.uploadContent(buffer, { type: mimetype, name: "zalo-avatar" });
     await intent.setAvatarUrl(mxc);
     this.store.setPuppetAvatarUrl(zaloUid, profile.avatarUrl);

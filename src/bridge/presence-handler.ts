@@ -9,12 +9,15 @@ const TYPING_STOP_MS = 8_000;
 export class PresenceHandler {
   private readonly store: MappingStore;
   private readonly puppets: PuppetRegistry;
+  /** own Zalo uid — group seenUids can include it; a ghost of the OWNER must never join */
+  private readonly getOwnZaloId: () => string | null;
   /** auto-stop timers keyed by roomId|uid so repeated typing events extend, not stack */
   private readonly typingTimers = new Map<string, NodeJS.Timeout>();
 
-  constructor(store: MappingStore, puppets: PuppetRegistry) {
+  constructor(store: MappingStore, puppets: PuppetRegistry, getOwnZaloId: () => string | null) {
     this.store = store;
     this.puppets = puppets;
+    this.getOwnZaloId = getOwnZaloId;
   }
 
   async handleSeen(event: ZaloSeenEvent): Promise<void> {
@@ -24,7 +27,8 @@ export class PresenceHandler {
     if (!eventId) return; // message predates the bridge or wasn't bridged
 
     // DM: the peer (thread id) saw it; group: exactly the uids Zalo reports
-    const uids = event.threadType === "user" ? [event.threadId] : event.seenUids;
+    const ownId = this.getOwnZaloId();
+    const uids = (event.threadType === "user" ? [event.threadId] : event.seenUids).filter((uid) => uid !== ownId);
     for (const uid of uids) {
       await this.puppets
         .intentFor(uid)
@@ -34,6 +38,7 @@ export class PresenceHandler {
   }
 
   async handleTyping(event: ZaloTypingEvent): Promise<void> {
+    if (event.uid === this.getOwnZaloId()) return;
     const portal = this.store.getPortalByThread(event.threadId);
     if (!portal) return;
     const intent = this.puppets.intentFor(event.uid);

@@ -19,6 +19,10 @@ const configSchema = z.object({
     // Conservative pacing — bridge runs on the user's main Zalo account
     messagesPerMinute: z.number().positive().max(30).default(8),
   }).default({ credsPath: "zalo-creds.session.json", messagesPerMinute: 8 }),
+  bridge: z.object({
+    dbPath: z.string().min(1).default("bridge.db"),
+    mediaMaxBytes: z.number().int().positive().default(10 * 1024 * 1024),
+  }).default({ dbPath: "bridge.db", mediaMaxBytes: 10 * 1024 * 1024 }),
   logging: z.object({
     level: z.enum(["debug", "info", "warn", "error"]).default("info"),
   }).default({ level: "info" }),

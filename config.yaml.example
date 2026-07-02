@@ -16,3 +16,9 @@ zalo:
 
 logging:
   level: info
+
+bridge:
+  # SQLite mapping store (portal rooms, ghosts, message dedup)
+  dbPath: bridge.db
+  # Inbound media size cap in bytes (default 10MB)
+  mediaMaxBytes: 10485760

@@ -41,6 +41,9 @@ export class SyncManager {
     const { zalo, portals, inbound } = this.deps;
     const pinned = await zalo.getPinnedThreadIds();
     const groupIds = await zalo.getAllGroupIds();
+    // Without the group list we cannot classify pinned ids — a pinned group
+    // misfiled as a DM would persist a corrupt portal with no repair path. Abort.
+    if (groupIds === null) return "Sync aborted: could not fetch the group list from Zalo (classification unsafe). Try again shortly.";
     const groupSet = new Set(groupIds);
 
     // Pinned first (user-curated), then top groups up to the limit

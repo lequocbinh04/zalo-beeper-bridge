@@ -21,6 +21,16 @@ export class EchoSuppressor {
     this.pending.set(threadId, list);
   }
 
+  /** Removes one pending entry — call when a send FAILED so a real phone-typed
+   * message with identical text isn't wrongly swallowed. */
+  cancel(threadId: string, text: string): void {
+    const list = this.pending.get(threadId);
+    if (!list) return;
+    const idx = list.findIndex((e) => e.text === text);
+    if (idx !== -1) list.splice(idx, 1);
+    if (!list.length) this.pending.delete(threadId);
+  }
+
   /** Returns true (and consumes the entry) when this self-message is our own echo. */
   consume(threadId: string, text: string): boolean {
     const list = this.pending.get(threadId);

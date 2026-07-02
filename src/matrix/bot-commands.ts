@@ -14,6 +14,8 @@ export interface BotCommandContext {
   bridge: Bridge;
   zalo: ZaloClient;
   ownerUserId: string;
+  /** Conversation sync (pinned + top groups); returns a summary message. */
+  runSync?: () => Promise<string>;
 }
 
 async function handleLogin(ctx: BotCommandContext, roomId: string): Promise<void> {
@@ -60,7 +62,7 @@ export async function handleBotEvent(ctx: BotCommandContext, event: WeakEvent): 
     const content = event.content as { membership?: string };
     if (content.membership === "invite" && event.sender === ctx.ownerUserId) {
       await ctx.bridge.getIntent().join(event.room_id);
-      await ctx.bridge.getIntent().sendText(event.room_id, "sh-zalo bridge bot ready. Commands: ping | login | logout | status");
+      await ctx.bridge.getIntent().sendText(event.room_id, "sh-zalo bridge bot ready. Commands: ping | login | logout | status | sync");
     }
     return true;
   }
@@ -83,6 +85,16 @@ export async function handleBotEvent(ctx: BotCommandContext, event: WeakEvent): 
     case "status":
       await handleStatus(ctx, event.room_id);
       return true;
+    case "sync": {
+      if (!ctx.runSync || !ctx.zalo.isLoggedIn) {
+        await ctx.bridge.getIntent().sendText(event.room_id, "Sync unavailable — log in to Zalo first.");
+        return true;
+      }
+      await ctx.bridge.getIntent().sendText(event.room_id, "Syncing pinned conversations + top groups (paced to protect the account)...");
+      const summary = await ctx.runSync();
+      await ctx.bridge.getIntent().sendText(event.room_id, summary);
+      return true;
+    }
     default:
       return false;
   }

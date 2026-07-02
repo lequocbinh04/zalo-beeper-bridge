@@ -13,6 +13,42 @@ export interface MediaResult {
   eventId: string;
 }
 
+const FETCH_TIMEOUT_MS = 30_000;
+// Media URLs come from message payloads (contact-influenced input) — restrict
+// to Zalo CDN hosts over https to close SSRF toward localhost/LAN.
+const ALLOWED_HOST_SUFFIXES = [".zdn.vn", ".zadn.vn"];
+
+export interface FetchedMedia {
+  buffer: Buffer;
+  mimetype: string;
+}
+
+/** Guarded download: https-only, Zalo CDN hosts, hard timeout, streamed byte cap. */
+export async function fetchMediaCapped(url: string, maxBytes: number): Promise<FetchedMedia> {
+  const parsed = new URL(url);
+  if (parsed.protocol !== "https:") throw new Error(`refusing non-https media URL (${parsed.protocol})`);
+  if (!ALLOWED_HOST_SUFFIXES.some((s) => parsed.hostname.endsWith(s))) {
+    throw new Error(`refusing media host outside Zalo CDN (${parsed.hostname})`);
+  }
+
+  const response = await fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+  if (!response.ok) throw new Error(`media download failed: HTTP ${response.status}`);
+  if (!response.body) throw new Error("media download returned no body");
+
+  // Stream with a cap — content-length can be spoofed, never trust it for allocation
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for await (const chunk of response.body as AsyncIterable<Uint8Array>) {
+    total += chunk.byteLength;
+    if (total > maxBytes) throw new Error(`media exceeds size cap (>${maxBytes} bytes)`);
+    chunks.push(chunk);
+  }
+  return {
+    buffer: Buffer.concat(chunks),
+    mimetype: response.headers.get("content-type")?.split(";")[0] ?? "application/octet-stream",
+  };
+}
+
 // Sticker mxc cache — the same sticker id is sent many times; upload once per run
 const stickerMxcCache = new Map<number, { mxc: string; mimetype: string; size: number }>();
 
@@ -26,11 +62,7 @@ export async function bridgeInboundSticker(
 ): Promise<MediaResult> {
   let cached = stickerMxcCache.get(stickerId);
   if (!cached) {
-    const response = await fetch(imageUrl);
-    if (!response.ok) throw new Error(`sticker download failed: HTTP ${response.status}`);
-    const buffer = Buffer.from(await response.arrayBuffer());
-    if (buffer.byteLength > maxBytes) throw new Error("sticker exceeds size cap");
-    const mimetype = response.headers.get("content-type")?.split(";")[0] ?? "image/webp";
+    const { buffer, mimetype } = await fetchMediaCapped(imageUrl, maxBytes);
     const mxc = await intent.uploadContent(buffer, { type: mimetype, name: `zalo-sticker-${stickerId}` });
     cached = { mxc, mimetype, size: buffer.byteLength };
     stickerMxcCache.set(stickerId, cached);
@@ -49,16 +81,7 @@ export async function bridgeInboundPhoto(
   photo: InboundPhoto,
   maxBytes: number,
 ): Promise<MediaResult> {
-  const response = await fetch(photo.url);
-  if (!response.ok) throw new Error(`photo download failed: HTTP ${response.status}`);
-
-  const declared = Number(response.headers.get("content-length") ?? 0);
-  if (declared > maxBytes) throw new Error(`photo exceeds size cap (${declared} > ${maxBytes} bytes)`);
-
-  const buffer = Buffer.from(await response.arrayBuffer());
-  if (buffer.byteLength > maxBytes) throw new Error(`photo exceeds size cap (${buffer.byteLength} > ${maxBytes} bytes)`);
-
-  const mimetype = response.headers.get("content-type")?.split(";")[0] ?? "image/jpeg";
+  const { buffer, mimetype } = await fetchMediaCapped(photo.url, maxBytes);
   const mxcUrl = await intent.uploadContent(buffer, { type: mimetype, name: "zalo-photo" });
   const { event_id } = await intent.sendMessage(roomId, {
     msgtype: "m.image",
