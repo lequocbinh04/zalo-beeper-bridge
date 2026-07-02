@@ -21,6 +21,36 @@ export interface ZaloMessage {
   /** true when sent by the bridged account itself (any device) — zca-js selfListen */
   isSelf: boolean;
   content: ZaloContent;
+  /** Raw fields needed to quote this message later (Matrix reply → Zalo quote) */
+  quotable?: ZaloQuotePayload;
+}
+
+/** Subset of TMessage that zca-js sendMessage accepts as `quote`. */
+export interface ZaloQuotePayload {
+  content: string;
+  msgType: string;
+  propertyExt: unknown;
+  uidFrom: string;
+  msgId: string;
+  cliMsgId: string;
+  ts: string;
+  ttl: number;
+}
+
+/** Read-receipt event: someone saw messages in a thread. */
+export interface ZaloSeenEvent {
+  threadId: string;
+  threadType: ZaloThreadType;
+  msgId: string;
+  /** group only: uids that saw the message; empty for DMs (the peer saw it) */
+  seenUids: string[];
+}
+
+/** Typing indicator from a contact. */
+export interface ZaloTypingEvent {
+  threadId: string;
+  threadType: ZaloThreadType;
+  uid: string;
 }
 
 /** Raw zca-js listener "message" event shape (subset we rely on). */
@@ -35,5 +65,8 @@ export interface RawZaloMessage {
     dName?: string;
     ts: string | number;
     content: unknown;
+    cliMsgId?: string;
+    propertyExt?: unknown;
+    ttl?: number;
   };
 }

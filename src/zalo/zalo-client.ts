@@ -6,7 +6,7 @@ import { loadCredentials, saveCredentials, clearCredentials } from "./credential
 import { normalizeZaloMessage } from "./event-normalizer.ts";
 import { ListenerManager } from "./listener-manager.ts";
 import { RateLimiter } from "./rate-limiter.ts";
-import type { RawZaloMessage, ZaloMessage, ZaloThreadType } from "./types.ts";
+import type { RawZaloMessage, ZaloMessage, ZaloQuotePayload, ZaloSeenEvent, ZaloThreadType, ZaloTypingEvent } from "./types.ts";
 
 export interface ZaloClientOptions {
   credsPath: string;
@@ -15,6 +15,8 @@ export interface ZaloClientOptions {
 
 interface ZaloClientEvents {
   message: [message: ZaloMessage];
+  seen: [event: ZaloSeenEvent];
+  typing: [event: ZaloTypingEvent];
   connected: [];
   reconnecting: [attempt: number, delayMs: number];
   dead: [reason: string];
@@ -131,6 +133,34 @@ export class ZaloClient extends EventEmitter<ZaloClientEvents> {
       const normalized = normalizeZaloMessage(raw as unknown as RawZaloMessage);
       if (normalized) this.emit("message", normalized);
     });
+    // Zalo pushes recent messages per thread on connect — replay them through the
+    // same pipeline (store-level msgId dedup makes this idempotent across restarts)
+    this.api.listener.on("old_messages", (messages) => {
+      for (const raw of messages as unknown as RawZaloMessage[]) {
+        const normalized = normalizeZaloMessage(raw);
+        if (normalized) this.emit("message", normalized);
+      }
+    });
+    this.api.listener.on("seen_messages", (seenList) => {
+      for (const seen of seenList as Array<{ type: number; threadId: string; data: { msgId: string; seenUids?: string[] } }>) {
+        if (!seen?.data?.msgId) continue;
+        this.emit("seen", {
+          threadId: seen.threadId,
+          threadType: seen.type === 1 ? "group" : "user",
+          msgId: String(seen.data.msgId),
+          seenUids: seen.data.seenUids ?? [],
+        });
+      }
+    });
+    this.api.listener.on("typing", (typing) => {
+      const t = typing as unknown as { type: number; threadId: string; data: { uid: string } };
+      if (!t?.data?.uid) return;
+      this.emit("typing", {
+        threadId: t.threadId,
+        threadType: t.type === 1 ? "group" : "user",
+        uid: String(t.data.uid),
+      });
+    });
     this.listenerManager.start(this.api);
   }
 
@@ -145,13 +175,103 @@ export class ZaloClient extends EventEmitter<ZaloClientEvents> {
     clearCredentials(this.opts.credsPath);
   }
 
-  /** Rate-limited text send. Returns Zalo msgId (echo-suppression key) when available. */
-  async sendText(threadId: string, threadType: ZaloThreadType, text: string): Promise<{ msgId: string | null }> {
+  /** Contact profile (name + avatar URL) via zca-js getUserInfo; null when unavailable. */
+  async getUserProfile(uid: string): Promise<{ displayName?: string; avatarUrl?: string } | null> {
+    if (!this.api) return null;
+    try {
+      const info = await this.api.getUserInfo(uid);
+      const profile = info.changed_profiles[uid] as { displayName?: string; zaloName?: string; avatar?: string } | undefined;
+      if (!profile) return null;
+      return { displayName: profile.displayName || profile.zaloName, avatarUrl: profile.avatar };
+    } catch (err) {
+      console.warn(`getUserInfo(${uid}) failed:`, (err as Error).message);
+      return null;
+    }
+  }
+
+  /** Sticker image URL (prefers animated webp) via getStickersDetail. */
+  async getStickerImageUrl(stickerId: number): Promise<string | null> {
+    if (!this.api) return null;
+    try {
+      const details = await this.api.getStickersDetail(stickerId);
+      const d = details[0];
+      return d?.stickerWebpUrl || d?.stickerUrl || null;
+    } catch (err) {
+      console.warn(`getStickersDetail(${stickerId}) failed:`, (err as Error).message);
+      return null;
+    }
+  }
+
+  /** Thread ids the user pinned in Zalo (conversation sync targets). */
+  async getPinnedThreadIds(): Promise<string[]> {
+    if (!this.api) return [];
+    try {
+      return (await this.api.getPinConversations()).conversations ?? [];
+    } catch (err) {
+      console.warn("getPinConversations failed:", (err as Error).message);
+      return [];
+    }
+  }
+
+  /** All group ids the account belongs to. null = fetch FAILED (callers must not treat as "no groups"). */
+  async getAllGroupIds(): Promise<string[] | null> {
+    if (!this.api) return null;
+    try {
+      return Object.keys((await this.api.getAllGroups()).gridVerMap ?? {});
+    } catch (err) {
+      console.warn("getAllGroups failed:", (err as Error).message);
+      return null;
+    }
+  }
+
+  /** Recent group history, normalized and sorted oldest-first (best-effort backfill). */
+  async getGroupHistory(threadId: string, count = 30): Promise<ZaloMessage[]> {
+    if (!this.api) return [];
+    try {
+      const res = await this.api.getGroupChatHistory(threadId, count);
+      return (res.groupMsgs ?? [])
+        .map((raw) => normalizeZaloMessage(raw as unknown as RawZaloMessage))
+        .filter((m): m is ZaloMessage => m !== null)
+        .sort((a, b) => a.timestamp - b.timestamp);
+    } catch (err) {
+      console.warn(`getGroupChatHistory(${threadId}) failed:`, (err as Error).message);
+      return [];
+    }
+  }
+
+  /** Group display name via zca-js getGroupInfo; null when unavailable. */
+  async getGroupName(threadId: string): Promise<string | null> {
+    if (!this.api) return null;
+    try {
+      const info = await this.api.getGroupInfo(threadId);
+      const name = (info.gridInfoMap[threadId] as { name?: string } | undefined)?.name;
+      return name || null;
+    } catch (err) {
+      console.warn(`getGroupInfo(${threadId}) failed:`, (err as Error).message);
+      return null;
+    }
+  }
+
+  /**
+   * Rate-limited text send with optional quote. Returns Zalo msgId (echo-suppression key).
+   * onBeforeSend fires AFTER the rate-limit wait, immediately before the network call —
+   * echo-suppression TTLs must start at real send time, not enqueue time.
+   */
+  async sendText(
+    threadId: string,
+    threadType: ZaloThreadType,
+    text: string,
+    quote?: ZaloQuotePayload,
+    onBeforeSend?: () => void,
+  ): Promise<{ msgId: string | null }> {
     // Capture before the rate-limit wait — logout during the wait must not null-deref
     const api = this.api;
     if (!api) throw new Error("Not logged in");
     await this.rateLimiter.acquire();
-    const result = await api.sendMessage(text, threadId, threadType === "group" ? ThreadType.Group : ThreadType.User);
+    onBeforeSend?.();
+    const zaloType = threadType === "group" ? ThreadType.Group : ThreadType.User;
+    const payload = quote ? { msg: text, quote: quote as never } : text;
+    const result = await api.sendMessage(payload, threadId, zaloType);
     return { msgId: result.message?.msgId != null ? String(result.message.msgId) : null };
   }
 }

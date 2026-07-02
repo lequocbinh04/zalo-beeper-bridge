@@ -12,7 +12,7 @@ export interface PortalRow {
 
 export type MessageDirection = "inbound" | "outbound";
 
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 export class MappingStore {
   private readonly db: Database.Database;
@@ -26,9 +26,14 @@ export class MappingStore {
   private migrate(): void {
     const current = (this.db.pragma("user_version", { simple: true }) as number) ?? 0;
     if (current >= SCHEMA_VERSION) return;
-    if (current < 1) this.migrateV1();
-    if (current < 2) this.db.exec("ALTER TABLE puppet ADD COLUMN avatar_url TEXT");
-    this.db.pragma(`user_version = ${SCHEMA_VERSION}`);
+    // Transactional: a crash mid-migration must not leave ALTERs applied with a
+    // stale user_version (re-running an ALTER = duplicate-column crash loop)
+    this.db.transaction(() => {
+      if (current < 1) this.migrateV1();
+      if (current < 2) this.db.exec("ALTER TABLE puppet ADD COLUMN avatar_url TEXT");
+      if (current < 3) this.db.exec("ALTER TABLE message ADD COLUMN quote_json TEXT");
+      this.db.pragma(`user_version = ${SCHEMA_VERSION}`);
+    })();
   }
 
   private migrateV1(): void {
@@ -117,11 +122,32 @@ export class MappingStore {
   }
 
   /** Atomic dedup: returns false when this Zalo msgId was already recorded. */
-  recordMessage(zaloMsgId: string, roomId: string, eventId: string | null, direction: MessageDirection): boolean {
+  recordMessage(
+    zaloMsgId: string,
+    roomId: string,
+    eventId: string | null,
+    direction: MessageDirection,
+    quoteJson: string | null = null,
+  ): boolean {
     const result = this.db
-      .prepare("INSERT OR IGNORE INTO message (zalo_msg_id, room_id, event_id, direction, ts) VALUES (?, ?, ?, ?, ?)")
-      .run(zaloMsgId, roomId, eventId, direction, Date.now());
+      .prepare("INSERT OR IGNORE INTO message (zalo_msg_id, room_id, event_id, direction, ts, quote_json) VALUES (?, ?, ?, ?, ?, ?)")
+      .run(zaloMsgId, roomId, eventId, direction, Date.now(), quoteJson);
+    if (result.changes === 0 && eventId) {
+      // Echo-before-response ordering records msgId with a null event first;
+      // fill it in when the real event id arrives so read receipts can map
+      this.db
+        .prepare("UPDATE message SET event_id = ? WHERE zalo_msg_id = ? AND event_id IS NULL")
+        .run(eventId, zaloMsgId);
+    }
     return result.changes === 1;
+  }
+
+  /** Quote payload for the Zalo message behind a Matrix event (reply mapping). */
+  getQuoteJsonByEventId(eventId: string): string | null {
+    const row = this.db.prepare("SELECT quote_json FROM message WHERE event_id = ?").get(eventId) as
+      | { quote_json: string | null }
+      | undefined;
+    return row?.quote_json ?? null;
   }
 
   hasMessage(zaloMsgId: string): boolean {

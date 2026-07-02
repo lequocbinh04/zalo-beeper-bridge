@@ -46,6 +46,7 @@ export function normalizeZaloMessage(raw: RawZaloMessage): ZaloMessage | null {
   const d = raw.data;
   // uidFrom is the Phase 4 puppet key — never let "undefined" become a ghost id
   if (!d?.msgId || !raw.threadId || !d.uidFrom) return null;
+  const content = normalizeContent(d.msgType, d.content);
   return {
     msgId: String(d.msgId),
     threadId: raw.threadId,
@@ -54,6 +55,20 @@ export function normalizeZaloMessage(raw: RawZaloMessage): ZaloMessage | null {
     senderName: d.dName || undefined,
     timestamp: Number(d.ts) || Date.now(),
     isSelf: raw.isSelf === true,
-    content: normalizeContent(d.msgType, d.content),
+    content,
+    // Text messages can be quoted later (Matrix reply → Zalo quote)
+    quotable:
+      content.kind === "text"
+        ? {
+            content: content.text,
+            msgType: d.msgType,
+            propertyExt: d.propertyExt ?? null,
+            uidFrom: String(d.uidFrom),
+            msgId: String(d.msgId),
+            cliMsgId: String(d.cliMsgId ?? ""),
+            ts: String(d.ts),
+            ttl: d.ttl ?? 0,
+          }
+        : undefined,
   };
 }

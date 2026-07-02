@@ -19,7 +19,7 @@ const dmText: RawZaloMessage = {
 };
 
 describe("normalizeZaloMessage", () => {
-  it("normalizes DM text", () => {
+  it("normalizes DM text and captures the quotable payload", () => {
     const m = normalizeZaloMessage(dmText);
     expect(m).toEqual({
       msgId: "7998805079701",
@@ -30,6 +30,16 @@ describe("normalizeZaloMessage", () => {
       timestamp: 1782964481836,
       isSelf: false,
       content: { kind: "text", text: "xin chào" },
+      quotable: {
+        content: "xin chào",
+        msgType: "webchat",
+        propertyExt: null,
+        uidFrom: "1111111111111111111",
+        msgId: "7998805079701",
+        cliMsgId: "",
+        ts: "1782964481836",
+        ttl: 0,
+      },
     });
   });
 

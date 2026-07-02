@@ -108,7 +108,13 @@ export class InboundHandler {
         break;
       }
     }
-    this.deps.store.recordMessage(msg.msgId, portal.room_id, eventId, "inbound");
+    this.deps.store.recordMessage(
+      msg.msgId,
+      portal.room_id,
+      eventId,
+      "inbound",
+      msg.quotable ? JSON.stringify(msg.quotable) : null,
+    );
   }
 
   private async intentForSender(msg: ZaloMessage, roomId: string) {
