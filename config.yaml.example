@@ -5,6 +5,14 @@ matrix:
   registrationPath: registration.yaml
   # Must match the `url:` port inside registration.yaml (bbctl proxy target)
   port: 29350
+  # Your Beeper Matrix ID — only this user may issue bot commands
+  owner: "@<your-beeper-username>:beeper.com"
+
+zalo:
+  # zca-js session credentials (auto-created on QR login; chmod 600; NEVER commit)
+  credsPath: zalo-creds.session.json
+  # Conservative outbound pacing to protect the Zalo account
+  messagesPerMinute: 8
 
 logging:
   level: info

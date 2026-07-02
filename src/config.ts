@@ -11,7 +11,14 @@ const configSchema = z.object({
     registrationPath: z.string().min(1),
     // Must match the port in registration.yaml `url:` (bbctl proxy forwards here)
     port: z.number().int().positive(),
+    // Only this MXID may issue bot commands (single-user bridge)
+    owner: z.string().regex(/^@.+:.+$/, "must be a full Matrix ID like @user:beeper.com"),
   }),
+  zalo: z.object({
+    credsPath: z.string().min(1).default("zalo-creds.session.json"),
+    // Conservative pacing — bridge runs on the user's main Zalo account
+    messagesPerMinute: z.number().positive().max(30).default(8),
+  }).default({ credsPath: "zalo-creds.session.json", messagesPerMinute: 8 }),
   logging: z.object({
     level: z.enum(["debug", "info", "warn", "error"]).default("info"),
   }).default({ level: "info" }),
