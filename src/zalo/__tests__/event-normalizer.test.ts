@@ -30,6 +30,7 @@ describe("normalizeZaloMessage", () => {
       timestamp: 1782964481836,
       isSelf: false,
       content: { kind: "text", text: "xin chào" },
+      rawMsgType: "webchat",
       quotable: {
         content: "xin chào",
         msgType: "webchat",

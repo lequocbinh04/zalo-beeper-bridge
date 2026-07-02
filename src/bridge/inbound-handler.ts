@@ -119,6 +119,8 @@ export class InboundHandler {
       "inbound",
       msg.quotable ? JSON.stringify(msg.quotable) : null,
       msg.cliMsgId ?? null,
+      msg.senderId,
+      msg.rawMsgType ?? null,
     );
   }
 

@@ -38,9 +38,16 @@ export class PresenceHandler {
       if (readBy && this.ownerUserId in readBy) readEventId = eventId;
     }
     if (!readEventId) return;
-    const target = this.store.getZaloTargetByEventId(readEventId);
-    if (!target?.cliMsgId) return;
-    await this.zalo.sendSeen(portal.thread_id, portal.thread_type, target.zaloMsgId, target.cliMsgId);
+    const target = this.store.getSeenTargetByEventId(readEventId);
+    if (!target?.cliMsgId || !target.senderId) return;
+    await this.zalo.sendSeen(
+      portal.thread_id,
+      portal.thread_type,
+      target.zaloMsgId,
+      target.cliMsgId,
+      target.senderId,
+      target.msgType ?? "webchat",
+    );
   }
 
   /** Owner typing in a portal → show typing on Zalo (m.typing EDU). */

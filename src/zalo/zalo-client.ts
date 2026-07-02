@@ -291,12 +291,37 @@ export class ZaloClient extends EventEmitter<ZaloClientEvents> {
     await api.undo({ msgId, cliMsgId }, threadId, threadType === "group" ? ThreadType.Group : ThreadType.User);
   }
 
-  /** Mark a message seen on Zalo (Beeper read → Zalo "seen"). Best-effort. */
-  async sendSeen(threadId: string, threadType: ZaloThreadType, msgId: string, cliMsgId: string): Promise<void> {
+  /**
+   * Mark a message seen on Zalo (Beeper read → Zalo "seen"). Best-effort, no rate limit.
+   * senderId is the original sender (peer for DM); for a DM, uidFrom must be the peer
+   * and idTo the account itself. st/at/cmd/ts default to 0 (accepted by Zalo).
+   */
+  async sendSeen(
+    threadId: string,
+    threadType: ZaloThreadType,
+    msgId: string,
+    cliMsgId: string,
+    senderId: string,
+    msgType: string,
+  ): Promise<void> {
     const api = this.api;
     if (!api) return;
+    const isGroup = threadType === "group";
     try {
-      await api.sendSeenEvent({ msgId, cliMsgId, uidFrom: threadId } as never, threadType === "group" ? ThreadType.Group : ThreadType.User);
+      await api.sendSeenEvent(
+        {
+          msgId,
+          cliMsgId,
+          uidFrom: senderId,
+          idTo: isGroup ? threadId : (this.ownId ?? ""),
+          msgType: msgType || "webchat",
+          st: 0,
+          at: 0,
+          cmd: 0,
+          ts: 0,
+        },
+        isGroup ? ThreadType.Group : ThreadType.User,
+      );
     } catch (err) {
       console.warn("sendSeenEvent failed:", (err as Error).message);
     }

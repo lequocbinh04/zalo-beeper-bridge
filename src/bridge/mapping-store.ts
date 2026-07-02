@@ -12,7 +12,7 @@ export interface PortalRow {
 
 export type MessageDirection = "inbound" | "outbound";
 
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
 
 export class MappingStore {
   private readonly db: Database.Database;
@@ -34,6 +34,11 @@ export class MappingStore {
       if (current < 3) this.db.exec("ALTER TABLE message ADD COLUMN quote_json TEXT");
       // cliMsgId is required by Zalo reaction/undo APIs; store per inbound message
       if (current < 4) this.db.exec("ALTER TABLE message ADD COLUMN cli_msg_id TEXT");
+      // sender_id + msg_type let us build a Zalo seen event (Beeper read → Zalo "seen")
+      if (current < 5) {
+        this.db.exec("ALTER TABLE message ADD COLUMN sender_id TEXT");
+        this.db.exec("ALTER TABLE message ADD COLUMN msg_type TEXT");
+      }
       this.db.pragma(`user_version = ${SCHEMA_VERSION}`);
     })();
   }
@@ -135,10 +140,14 @@ export class MappingStore {
     direction: MessageDirection,
     quoteJson: string | null = null,
     cliMsgId: string | null = null,
+    senderId: string | null = null,
+    msgType: string | null = null,
   ): boolean {
     const result = this.db
-      .prepare("INSERT OR IGNORE INTO message (zalo_msg_id, room_id, event_id, direction, ts, quote_json, cli_msg_id) VALUES (?, ?, ?, ?, ?, ?, ?)")
-      .run(zaloMsgId, roomId, eventId, direction, Date.now(), quoteJson, cliMsgId);
+      .prepare(
+        "INSERT OR IGNORE INTO message (zalo_msg_id, room_id, event_id, direction, ts, quote_json, cli_msg_id, sender_id, msg_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      )
+      .run(zaloMsgId, roomId, eventId, direction, Date.now(), quoteJson, cliMsgId, senderId, msgType);
     if (result.changes === 0) {
       // Outbound send and its selfListen echo race to record the same msgId; each
       // carries a different piece (send → event_id, echo → cli_msg_id). Backfill
@@ -169,6 +178,19 @@ export class MappingStore {
     return row
       ? { zaloMsgId: row.zalo_msg_id, cliMsgId: row.cli_msg_id, roomId: row.room_id, direction: row.direction }
       : null;
+  }
+
+  /** Everything needed to send a Zalo "seen" event for a bridged inbound message. */
+  getSeenTargetByEventId(
+    eventId: string,
+  ): { zaloMsgId: string; cliMsgId: string | null; senderId: string | null; msgType: string | null } | null {
+    const row = this.db
+      .prepare("SELECT zalo_msg_id, cli_msg_id, sender_id, msg_type, direction FROM message WHERE event_id = ?")
+      .get(eventId) as
+      | { zalo_msg_id: string; cli_msg_id: string | null; sender_id: string | null; msg_type: string | null; direction: MessageDirection }
+      | undefined;
+    if (!row || row.direction !== "inbound") return null; // only mark the peer's messages seen
+    return { zaloMsgId: row.zalo_msg_id, cliMsgId: row.cli_msg_id, senderId: row.sender_id, msgType: row.msg_type };
   }
 
   /** Matrix event for a Zalo msgId + who bridged it (inbound reaction → annotate). */

@@ -23,6 +23,8 @@ export interface ZaloMessage {
   content: ZaloContent;
   /** client message id — needed by Zalo reaction/undo APIs */
   cliMsgId?: string;
+  /** raw Zalo msgType (e.g. webchat, chat.photo) — needed to build seen events */
+  rawMsgType?: string;
   /** Raw fields needed to quote this message later (Matrix reply → Zalo quote) */
   quotable?: ZaloQuotePayload;
 }
