@@ -1,0 +1,10 @@
+# Copy to config.yaml and fill in from `bbctl register sh-zalo` output.
+matrix:
+  homeserverUrl: https://matrix.beeper.com/_hungryserv/<your-beeper-username>
+  domain: beeper.local
+  registrationPath: registration.yaml
+  # Must match the `url:` port inside registration.yaml (bbctl proxy target)
+  port: 29350
+
+logging:
+  level: info

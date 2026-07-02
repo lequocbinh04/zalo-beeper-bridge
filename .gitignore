@@ -1,0 +1,15 @@
+node_modules/
+dist/
+
+# secrets & sessions — never commit
+*.session.json
+spike/qr.png
+spike/raw-events.ndjson
+config.yaml
+registration.yaml
+*.db
+*.db-wal
+*.db-shm
+
+.DS_Store
+.claude/settings.local.json
