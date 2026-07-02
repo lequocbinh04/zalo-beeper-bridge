@@ -1,11 +1,23 @@
 // Matrix appservice wiring: Bridge instance + event routing.
 // bbctl proxy holds the websocket to Beeper and forwards to our local HTTP port.
-import { Bridge, type Request, type WeakEvent } from "matrix-appservice-bridge";
+import { Bridge, type EphemeralEvent, type Request, type WeakEvent } from "matrix-appservice-bridge";
 import type { BridgeConfig } from "../config.ts";
 
 export type MatrixEventHandler = (event: WeakEvent) => Promise<void> | void;
+// Read receipts and typing arrive via a SEPARATE controller callback, not onEvent
+export type MatrixEphemeralHandler = (event: EphemeralEvent) => Promise<void> | void;
 
-export function createBridge(config: BridgeConfig, onEvent: MatrixEventHandler): Bridge {
+export function createBridge(config: BridgeConfig, onEvent: MatrixEventHandler, onEphemeral: MatrixEphemeralHandler): Bridge {
+  const runGuarded = (label: string, fn: () => Promise<void> | void, ctx: string) => {
+    void (async () => {
+      try {
+        await fn();
+      } catch (err) {
+        console.error(`${label} failed for ${ctx}:`, err);
+      }
+    })();
+  };
+
   const bridge = new Bridge({
     homeserverUrl: config.matrix.homeserverUrl,
     domain: config.matrix.domain,
@@ -15,14 +27,11 @@ export function createBridge(config: BridgeConfig, onEvent: MatrixEventHandler):
     controller: {
       onEvent: (request: Request<WeakEvent>) => {
         const event = request.getData();
-        // Catches both sync throws and async rejections from handlers
-        void (async () => {
-          try {
-            await onEvent(event);
-          } catch (err) {
-            console.error(`onEvent failed for ${event.type} in ${event.room_id}:`, err);
-          }
-        })();
+        runGuarded("onEvent", () => onEvent(event), `${event.type} in ${event.room_id}`);
+      },
+      onEphemeralEvent: (request: Request<EphemeralEvent>) => {
+        const event = request.getData();
+        runGuarded("onEphemeralEvent", () => onEphemeral(event), event.type);
       },
     },
   });

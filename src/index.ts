@@ -33,20 +33,26 @@ const ctx: BotCommandContext = {
 
 const echo = new EchoSuppressor();
 
-const bridge = createBridge(config, async (event) => {
-  // Portal rooms carry conversation traffic (outbound); everything else is bot commands
-  if (event.room_id && store.isPortalRoom(event.room_id)) {
-    if (event.type === "m.receipt") {
-      await presence.handleOwnerReceipt(event.room_id, event.content as Record<string, unknown>);
-    } else if (event.type === "m.typing") {
-      await presence.handleOwnerTyping(event.room_id, (event.content as { user_ids?: string[] }).user_ids ?? []);
-    } else {
+const bridge = createBridge(
+  config,
+  async (event) => {
+    // Portal rooms carry conversation traffic (outbound); everything else is bot commands
+    if (event.room_id && store.isPortalRoom(event.room_id)) {
       await outbound.handle(event);
+      return;
     }
-    return;
-  }
-  await handleBotEvent(ctx, event);
-});
+    await handleBotEvent(ctx, event);
+  },
+  async (event) => {
+    // Ephemeral: owner's read receipts + typing in a portal → mirror onto Zalo.
+    // Presence events carry no room_id and are ignored.
+    if (event.type === "m.receipt") {
+      if (store.isPortalRoom(event.room_id)) await presence.handleOwnerReceipt(event.room_id, event.content as Record<string, unknown>);
+    } else if (event.type === "m.typing") {
+      if (store.isPortalRoom(event.room_id)) await presence.handleOwnerTyping(event.room_id, event.content.user_ids ?? []);
+    }
+  },
+);
 ctx.bridge = bridge;
 
 const puppets = new PuppetRegistry(bridge, store, config.matrix.domain, (uid) => zalo.getUserProfile(uid));
