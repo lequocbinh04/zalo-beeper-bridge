@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Beeper<->Zalo bridge appservice.
+  Install: copy to ~/Library/LaunchAgents/ and `launchctl load` it (see docs/deployment-guide.md).
+  Paths are absolute because launchd runs with a minimal environment.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>dev.beeper-zalo.bridge</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/cris/.nvm/versions/node/v24.16.0/bin/node</string>
+        <string>src/index.ts</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/Users/cris/BrainOS/10_Work/02_Personal/beeper-zalo</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/Users/cris/.nvm/versions/node/v24.16.0/bin:/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+    <key>StandardOutPath</key>
+    <string>/Users/cris/BrainOS/10_Work/02_Personal/beeper-zalo/logs/bridge.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/cris/BrainOS/10_Work/02_Personal/beeper-zalo/logs/bridge.log</string>
+</dict>
+</plist>

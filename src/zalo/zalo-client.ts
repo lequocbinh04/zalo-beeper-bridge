@@ -370,6 +370,31 @@ export class ZaloClient extends EventEmitter<ZaloClientEvents> {
   }
 
   /**
+   * Send a non-image attachment (video/file/audio) Beeper→Zalo via sendMessage.
+   * zca-js routes by the filename extension: .mp4 → video, others → file.
+   */
+  async sendFile(
+    threadId: string,
+    threadType: ZaloThreadType,
+    data: Buffer,
+    filename: `${string}.${string}`,
+    caption = "",
+  ): Promise<string[]> {
+    const api = this.api;
+    if (!api) throw new Error("Not logged in");
+    await this.rateLimiter.acquire();
+    const res = await api.sendMessage(
+      { msg: caption, attachments: [{ data, filename, metadata: { totalSize: data.byteLength } }] },
+      threadId,
+      threadType === "group" ? ThreadType.Group : ThreadType.User,
+    );
+    const ids: string[] = [];
+    if (res.message?.msgId != null) ids.push(String(res.message.msgId));
+    for (const a of res.attachment ?? []) if (a?.msgId != null) ids.push(String(a.msgId));
+    return ids;
+  }
+
+  /**
    * Rate-limited text send with optional quote. Returns Zalo msgId (echo-suppression key).
    * onBeforeSend fires AFTER the rate-limit wait, immediately before the network call —
    * echo-suppression TTLs must start at real send time, not enqueue time.

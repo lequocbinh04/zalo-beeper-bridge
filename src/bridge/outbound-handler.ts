@@ -15,6 +15,20 @@ export function stripReplyFallback(body: string): string {
   return body.replace(/^(?:>.*\n)+\n?/, "");
 }
 
+const MIME_EXT: Record<string, string> = {
+  "image/jpeg": "jpg", "image/png": "png", "image/gif": "gif", "image/webp": "webp",
+  "video/mp4": "mp4", "audio/ogg": "ogg", "audio/mpeg": "mp3", "audio/mp4": "m4a", "audio/aac": "aac",
+  "application/pdf": "pdf",
+};
+
+/** Build a `name.ext` filename — zca-js routes attachments by extension. */
+export function buildFilename(msgtype: string, nameHint: string | undefined, mimetype: string): `${string}.${string}` {
+  const base = (nameHint || msgtype.replace("m.", "")).replace(/[^a-zA-Z0-9._-]/g, "_");
+  if (/\.[a-zA-Z0-9]{2,4}$/.test(base)) return base as `${string}.${string}`; // hint already has an extension
+  const ext = MIME_EXT[mimetype.split(";")[0]!] ?? (msgtype === "m.image" ? "jpg" : "bin");
+  return `${base}.${ext}` as `${string}.${string}`;
+}
+
 export interface OutboundHandlerDeps {
   bridge: Bridge;
   store: MappingStore;
@@ -56,11 +70,11 @@ export class OutboundHandler {
       "m.relates_to"?: { rel_type?: string; event_id?: string; "m.in_reply_to"?: { event_id?: string } };
     };
 
-    if (content.msgtype === "m.image") {
-      // Encrypted rooms put the mxc under file.url; unencrypted under url
+    // Media (encrypted rooms put the mxc under file.url; unencrypted under url)
+    if (content.msgtype === "m.image" || content.msgtype === "m.video" || content.msgtype === "m.file" || content.msgtype === "m.audio") {
       const mxc = content.url ?? (content as { file?: { url?: string } }).file?.url;
       if (mxc) {
-        await this.handleImage(event, portal, mxc, content.body);
+        await this.handleMedia(event, portal, content.msgtype, mxc, content);
         return true;
       }
     }
@@ -105,37 +119,42 @@ export class OutboundHandler {
     return true;
   }
 
-  private async handleImage(event: WeakEvent, portal: PortalRow, mxcUrl: string, filenameBody?: string): Promise<void> {
+  private async handleMedia(event: WeakEvent, portal: PortalRow, msgtype: string, mxcUrl: string, content: { body?: string; filename?: string; info?: { mimetype?: string } }): Promise<void> {
     if (event.sender !== this.deps.ownerUserId) return;
     if (event.event_id && this.deps.store.hasEventId(event.event_id)) return;
     try {
       // Authenticated-media download via fetch (bot-sdk's downloadContent 400s on Beeper's R2 redirect)
-      const { buffer: data, mimetype: contentType } = await downloadMatrixMedia(
+      const { buffer: data, mimetype: dlType } = await downloadMatrixMedia(
         this.deps.homeserverUrl,
         this.deps.matrixToken,
         mxcUrl,
         this.deps.mediaMaxBytes,
       );
-      let width = 0;
-      let height = 0;
-      try {
-        const dim = imageSize(data);
-        width = dim.width ?? 0;
-        height = dim.height ?? 0;
-      } catch {
-        // dimensions optional
-      }
-      const ext = (contentType?.split("/")[1] ?? "jpg").split(";")[0];
-      const filename = `${(filenameBody ?? "image").replace(/[^a-zA-Z0-9._-]/g, "_")}.${ext}` as `${string}.${string}`;
+      const mimetype = content.info?.mimetype ?? dlType;
+      const filename = buildFilename(msgtype, content.filename ?? content.body, mimetype);
       // Arm the pre-send guard before the network call: the selfListen echo can
-      // arrive before sendImage resolves and we record its msgId
+      // arrive before the send resolves and we record its msgId
       this.deps.echo.expectImage(portal.thread_id);
-      const msgIds = await this.deps.zalo.sendImage(portal.thread_id, portal.thread_type, data, filename, width, height);
-      // Record sent msgIds so the selfListen echo is deduped by id; the first msgId
-      // carries the Matrix event_id so redacting the image in Beeper can recall it on Zalo
+      let msgIds: string[];
+      if (msgtype === "m.image") {
+        let width = 0;
+        let height = 0;
+        try {
+          const dim = imageSize(data);
+          width = dim.width ?? 0;
+          height = dim.height ?? 0;
+        } catch {
+          // dimensions optional
+        }
+        msgIds = await this.deps.zalo.sendImage(portal.thread_id, portal.thread_type, data, filename, width, height);
+      } else {
+        // video (.mp4) / file / audio — zca-js routes by extension
+        msgIds = await this.deps.zalo.sendFile(portal.thread_id, portal.thread_type, data, filename);
+      }
+      // Record msgIds for echo dedup; first carries the Matrix event_id so redacting recalls it on Zalo
       msgIds.forEach((msgId, i) => this.deps.store.recordMessage(msgId, portal.room_id, i === 0 ? (event.event_id ?? null) : null, "outbound"));
     } catch (err) {
-      await this.notice(event.room_id!, `⚠ Failed to send image to Zalo: ${(err as Error).message}`);
+      await this.notice(event.room_id!, `⚠ Failed to send ${msgtype.replace("m.", "")} to Zalo: ${(err as Error).message}`);
     }
   }
 

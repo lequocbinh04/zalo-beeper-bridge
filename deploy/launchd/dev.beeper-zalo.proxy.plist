@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  bbctl proxy: bridges the Beeper websocket to the local appservice on port 29350.
+  Install: copy to ~/Library/LaunchAgents/ and `launchctl load` it.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>dev.beeper-zalo.proxy</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/cris/.local/bin/bbctl</string>
+        <string>proxy</string>
+        <string>-r</string>
+        <string>registration.yaml</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/Users/cris/BrainOS/10_Work/02_Personal/beeper-zalo</string>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+    <key>StandardOutPath</key>
+    <string>/Users/cris/BrainOS/10_Work/02_Personal/beeper-zalo/logs/proxy.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/cris/BrainOS/10_Work/02_Personal/beeper-zalo/logs/proxy.log</string>
+</dict>
+</plist>
