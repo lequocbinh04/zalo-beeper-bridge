@@ -1,7 +1,26 @@
 // Matrix appservice wiring: Bridge instance + event routing.
 // bbctl proxy holds the websocket to Beeper and forwards to our local HTTP port.
+import { AppService } from "matrix-appservice";
 import { Bridge, type EphemeralEvent, type Request, type WeakEvent } from "matrix-appservice-bridge";
 import type { BridgeConfig } from "../config.ts";
+
+// matrix-appservice only parses ephemeral EDUs from the UNSTABLE MSC2409 key
+// (`de.sorunome.msc2409.ephemeral`), but Beeper/hungryserv sends them under the
+// STABLE `ephemeral` key — so read receipts and typing were silently dropped.
+// Patch the transaction handler (before any AppService is constructed) to mirror
+// the stable key onto the unstable one the library reads.
+type TxnBody = Record<string, unknown> & { ephemeral?: unknown; "de.sorunome.msc2409.ephemeral"?: unknown };
+const appServiceProto = AppService.prototype as unknown as {
+  onTransaction: (req: { body?: TxnBody }, res: unknown) => void;
+};
+const originalOnTransaction = appServiceProto.onTransaction;
+appServiceProto.onTransaction = function patchedOnTransaction(req, res) {
+  const body = req.body;
+  if (body && body["de.sorunome.msc2409.ephemeral"] === undefined && body.ephemeral !== undefined) {
+    body["de.sorunome.msc2409.ephemeral"] = body.ephemeral;
+  }
+  return originalOnTransaction.call(this, req, res);
+};
 
 export type MatrixEventHandler = (event: WeakEvent) => Promise<void> | void;
 // Read receipts and typing arrive via a SEPARATE controller callback, not onEvent

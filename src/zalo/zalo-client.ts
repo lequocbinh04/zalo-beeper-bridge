@@ -168,14 +168,17 @@ export class ZaloClient extends EventEmitter<ZaloClientEvents> {
       const r = reaction as unknown as {
         threadId: string;
         isGroup: boolean;
-        data: { uidFrom: string; content: { rMsg?: Array<{ gMsgID: string }>; rIcon: string } };
+        isSelf?: boolean;
+        data: { uidFrom: string; dName?: string; content: { rMsg?: Array<{ gMsgID: string }>; rIcon: string } };
       };
       const targetMsgId = r?.data?.content?.rMsg?.[0]?.gMsgID;
       if (!targetMsgId || !r.data.uidFrom) return;
       this.emit("reaction", {
-        threadId: r.threadId,
+        threadId: String(r.threadId),
         threadType: r.isGroup ? "group" : "user",
         senderId: String(r.data.uidFrom),
+        senderName: r.data.dName || undefined,
+        isSelf: r.isSelf === true,
         targetMsgId: String(targetMsgId),
         icon: r.data.content.rIcon ?? "",
       });

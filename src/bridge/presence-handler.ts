@@ -81,10 +81,15 @@ export class PresenceHandler {
 
   /** Inbound reaction (Zalo→Beeper): ghost annotates the bridged Matrix event. */
   async handleReaction(event: ZaloReactionEvent): Promise<void> {
+    // Our own reaction (made from Beeper) echoes back via selfListen — it's already
+    // shown as the owner's reaction, so re-posting it as a ghost of ourselves would
+    // create a nameless "@sh-zalo_<own-uid>" reaction. Skip it.
+    if (event.isSelf || event.senderId === this.getOwnZaloId()) return;
     const target = this.store.getEventByZaloMsgId(event.targetMsgId);
     if (!target?.eventId) return; // reacted-to message not bridged
     if (!event.icon) return; // reaction removal — Matrix has no clean un-react via appservice; skip
-    const intent = this.puppets.intentFor(event.senderId);
+    // ensurePuppet so the reacting ghost has a name + avatar (they may not have messaged yet)
+    const intent = await this.puppets.ensurePuppet(event.senderId, event.senderName);
     await intent
       .sendEvent(target.roomId, "m.reaction", {
         "m.relates_to": { rel_type: "m.annotation", event_id: target.eventId, key: zaloToEmoji(event.icon) },

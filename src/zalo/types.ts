@@ -34,6 +34,9 @@ export interface ZaloReactionEvent {
   threadId: string;
   threadType: ZaloThreadType;
   senderId: string;
+  senderName?: string;
+  /** true when the reaction is the account's own (echoed back by selfListen) */
+  isSelf: boolean;
   /** the message being reacted to */
   targetMsgId: string;
   /** Zalo reaction icon code ("/-heart", ":>", ... ; "" = removed) */
