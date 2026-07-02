@@ -27,6 +27,8 @@ export interface ZaloMessage {
   rawMsgType?: string;
   /** Raw fields needed to quote this message later (Matrix reply → Zalo quote) */
   quotable?: ZaloQuotePayload;
+  /** msgId of the message this one replies to (Zalo quote → Matrix reply) */
+  replyToMsgId?: string;
 }
 
 /** A contact reacted to a message. */
@@ -45,7 +47,7 @@ export interface ZaloReactionEvent {
 
 /** Subset of TMessage that zca-js sendMessage accepts as `quote`. */
 export interface ZaloQuotePayload {
-  content: string;
+  content: unknown; // string for text, object for media
   msgType: string;
   propertyExt: unknown;
   uidFrom: string;
@@ -86,5 +88,6 @@ export interface RawZaloMessage {
     cliMsgId?: string;
     propertyExt?: unknown;
     ttl?: number;
+    quote?: { globalMsgId?: string | number };
   };
 }

@@ -117,6 +117,7 @@ export async function bridgeInboundPhoto(
   roomId: string,
   photo: InboundPhoto,
   maxBytes: number,
+  relatesTo?: Record<string, unknown>,
 ): Promise<MediaResult> {
   const { buffer, mimetype } = await fetchMediaCapped(photo.url, maxBytes);
   const ext = mimetype.split("/")[1]?.split(";")[0] ?? "jpg";
@@ -134,6 +135,7 @@ export async function bridgeInboundPhoto(
     },
   };
   if (photo.caption) content.filename = `zalo-photo.${ext}`;
+  if (relatesTo) content["m.relates_to"] = relatesTo;
   const { event_id } = await intent.sendMessage(roomId, content);
   return { eventId: event_id };
 }

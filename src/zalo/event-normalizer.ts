@@ -60,19 +60,18 @@ export function normalizeZaloMessage(raw: RawZaloMessage): ZaloMessage | null {
     content,
     cliMsgId: d.cliMsgId != null ? String(d.cliMsgId) : undefined,
     rawMsgType: d.msgType,
-    // Text messages can be quoted later (Matrix reply → Zalo quote)
-    quotable:
-      content.kind === "text"
-        ? {
-            content: content.text,
-            msgType: d.msgType,
-            propertyExt: d.propertyExt ?? null,
-            uidFrom: String(d.uidFrom),
-            msgId: String(d.msgId),
-            cliMsgId: String(d.cliMsgId ?? ""),
-            ts: String(d.ts),
-            ttl: d.ttl ?? 0,
-          }
-        : undefined,
+    // Any message can be quoted later (Matrix reply → Zalo quote): keep the raw content
+    quotable: {
+      content: d.content,
+      msgType: d.msgType,
+      propertyExt: d.propertyExt ?? null,
+      uidFrom: String(d.uidFrom),
+      msgId: String(d.msgId),
+      cliMsgId: String(d.cliMsgId ?? ""),
+      ts: String(d.ts),
+      ttl: d.ttl ?? 0,
+    },
+    // Zalo quote → the quoted message's global msgId (Matrix reply mapping)
+    replyToMsgId: d.quote?.globalMsgId != null ? String(d.quote.globalMsgId) : undefined,
   };
 }

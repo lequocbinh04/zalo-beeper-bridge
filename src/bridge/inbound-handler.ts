@@ -42,20 +42,35 @@ export class InboundHandler {
   }
 
   private async process(msg: ZaloMessage): Promise<void> {
+    // Echo of our OWN Beeper-sent message (outbound already recorded its msgId first,
+    // so hasMessage is true before the echo path below can run): backfill the quote
+    // payload + cliMsgId the send response lacked, so replying to / recalling our own
+    // message works. Then drop it (already visible in Beeper).
+    if (msg.isSelf && this.deps.store.hasMessage(msg.msgId)) {
+      this.deps.store.recordMessage(
+        msg.msgId,
+        this.deps.store.getPortalByThread(msg.threadId)?.room_id ?? "",
+        null,
+        "outbound",
+        msg.quotable ? JSON.stringify(msg.quotable) : null,
+        msg.cliMsgId ?? null,
+      );
+      return;
+    }
     if (this.deps.store.hasMessage(msg.msgId)) return; // duplicate listener event
 
     // Our own send echoed back by selfListen → already visible in Beeper, don't repost
     const isTextEcho = msg.isSelf && msg.content.kind === "text" && this.deps.echo.consume(msg.threadId, msg.content.text);
     const isMediaEcho = msg.isSelf && msg.content.kind === "photo" && this.deps.echo.consumeImage(msg.threadId);
     if (isTextEcho || isMediaEcho) {
-      // The echo carries the cliMsgId our send response lacked — record it so the
-      // owner can later recall this message from Beeper (undo needs msgId + cliMsgId)
+      // The echo carries the cliMsgId our send response lacked (needed for recall)
+      // and a full quotable payload (needed to reply to our own Beeper-sent message)
       this.deps.store.recordMessage(
         msg.msgId,
         this.deps.store.getPortalByThread(msg.threadId)?.room_id ?? "",
         null,
         "outbound",
-        null,
+        msg.quotable ? JSON.stringify(msg.quotable) : null,
         msg.cliMsgId ?? null,
       );
       return;
@@ -71,16 +86,25 @@ export class InboundHandler {
 
     const intent = msg.isSelf ? this.intentForSelf() : await this.intentForSender(msg, portal.room_id);
 
+    // Zalo quote → Matrix reply: map the quoted msgId to its bridged Matrix event
+    let relatesTo: Record<string, unknown> | undefined;
+    if (msg.replyToMsgId) {
+      const target = this.deps.store.getEventByZaloMsgId(msg.replyToMsgId);
+      if (target?.eventId) relatesTo = { "m.in_reply_to": { event_id: target.eventId } };
+    }
+
     let eventId: string | null = null;
     switch (msg.content.kind) {
       case "text": {
-        const r = await intent.sendMessage(portal.room_id, { msgtype: "m.text", body: msg.content.text });
+        const content: Record<string, unknown> = { msgtype: "m.text", body: msg.content.text };
+        if (relatesTo) content["m.relates_to"] = relatesTo;
+        const r = await intent.sendMessage(portal.room_id, content);
         eventId = r.event_id;
         break;
       }
       case "photo": {
         try {
-          const r = await bridgeInboundPhoto(intent, portal.room_id, msg.content, this.deps.mediaMaxBytes);
+          const r = await bridgeInboundPhoto(intent, portal.room_id, msg.content, this.deps.mediaMaxBytes, relatesTo);
           eventId = r.eventId;
         } catch (err) {
           const r = await intent.sendMessage(portal.room_id, {

@@ -108,10 +108,20 @@ export class OutboundHandler {
     try {
       // expect() runs via onBeforeSend AFTER the rate-limit wait — the suppression
       // TTL must start at real send time or bursts outlive it (duplicate echoes)
-      const { msgId } = await this.deps.zalo.sendText(portal.thread_id, portal.thread_type, body, quote, () =>
-        this.deps.echo.expect(portal.thread_id, body),
-      );
-      if (msgId) this.deps.store.recordMessage(msgId, event.room_id, event.event_id ?? null, "outbound");
+      let result;
+      try {
+        result = await this.deps.zalo.sendText(portal.thread_id, portal.thread_type, body, quote, () =>
+          this.deps.echo.expect(portal.thread_id, body),
+        );
+      } catch (quoteErr) {
+        if (!quote) throw quoteErr;
+        // A stale/incompatible quote payload can be rejected — degrade to a plain send
+        console.warn("[outbound] quoted send failed, retrying without quote:", (quoteErr as Error).message);
+        result = await this.deps.zalo.sendText(portal.thread_id, portal.thread_type, body, undefined, () =>
+          this.deps.echo.expect(portal.thread_id, body),
+        );
+      }
+      if (result.msgId) this.deps.store.recordMessage(result.msgId, event.room_id, event.event_id ?? null, "outbound");
     } catch (err) {
       this.deps.echo.cancel(portal.thread_id, body);
       await this.notice(event.room_id, `⚠ Failed to deliver to Zalo: ${(err as Error).message}`);

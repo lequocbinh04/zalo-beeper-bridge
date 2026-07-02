@@ -154,6 +154,8 @@ export class MappingStore {
       // whichever null field the loser supplies so recall/receipts have both.
       if (eventId) this.db.prepare("UPDATE message SET event_id = ? WHERE zalo_msg_id = ? AND event_id IS NULL").run(eventId, zaloMsgId);
       if (cliMsgId) this.db.prepare("UPDATE message SET cli_msg_id = ? WHERE zalo_msg_id = ? AND cli_msg_id IS NULL").run(cliMsgId, zaloMsgId);
+      // quote payload for our own sends only arrives with the echo (after outbound recorded it)
+      if (quoteJson) this.db.prepare("UPDATE message SET quote_json = ? WHERE zalo_msg_id = ? AND quote_json IS NULL").run(quoteJson, zaloMsgId);
     }
     return result.changes === 1;
   }
