@@ -12,6 +12,7 @@ import type { RawZaloMessage, ZaloMessage, ZaloQuotePayload, ZaloReactionEvent, 
 export interface ZaloClientOptions {
   credsPath: string;
   messagesPerMinute: number;
+  burst?: number;
 }
 
 interface ZaloClientEvents {
@@ -38,7 +39,7 @@ export class ZaloClient extends EventEmitter<ZaloClientEvents> {
   constructor(opts: ZaloClientOptions) {
     super();
     this.opts = opts;
-    this.rateLimiter = new RateLimiter(opts.messagesPerMinute);
+    this.rateLimiter = new RateLimiter(opts.messagesPerMinute, opts.burst);
     this.listenerManager.on("connected", () => {
       this.listenerState = "connected";
       this.emit("connected");
@@ -274,11 +275,10 @@ export class ZaloClient extends EventEmitter<ZaloClientEvents> {
     }
   }
 
-  /** React to a Zalo message (Beeper→Zalo). */
+  /** React to a Zalo message (Beeper→Zalo). Not rate-limited — it's a control action, not a message. */
   async react(threadId: string, threadType: ZaloThreadType, msgId: string, cliMsgId: string, emoji: string): Promise<void> {
     const api = this.api;
     if (!api) throw new Error("Not logged in");
-    await this.rateLimiter.acquire();
     await api.addReaction(emojiToZalo(emoji), {
       data: { msgId, cliMsgId },
       threadId,
@@ -286,11 +286,10 @@ export class ZaloClient extends EventEmitter<ZaloClientEvents> {
     });
   }
 
-  /** Recall (undo) a message we sent (Beeper→Zalo). Requires our own cliMsgId. */
+  /** Recall (undo) a message we sent (Beeper→Zalo). Not rate-limited — a control action, and delay is user-visible. */
   async recall(threadId: string, threadType: ZaloThreadType, msgId: string, cliMsgId: string): Promise<void> {
     const api = this.api;
     if (!api) throw new Error("Not logged in");
-    await this.rateLimiter.acquire();
     await api.undo({ msgId, cliMsgId }, threadId, threadType === "group" ? ThreadType.Group : ThreadType.User);
   }
 
@@ -341,7 +340,12 @@ export class ZaloClient extends EventEmitter<ZaloClientEvents> {
     }
   }
 
-  /** Send an image (Beeper→Zalo) as an attachment. Returns the CDN urls for echo suppression. */
+  /**
+   * Send an image (Beeper→Zalo) as a message with an attachment. uploadAttachment
+   * only uploads to the CDN without posting to the thread, so we send via
+   * sendMessage's `attachments` field (which uploads + delivers). Returns the sent
+   * msgId(s) for echo suppression.
+   */
   async sendImage(
     threadId: string,
     threadType: ZaloThreadType,
@@ -349,21 +353,20 @@ export class ZaloClient extends EventEmitter<ZaloClientEvents> {
     filename: `${string}.${string}`,
     width: number,
     height: number,
+    caption = "",
   ): Promise<string[]> {
     const api = this.api;
     if (!api) throw new Error("Not logged in");
     await this.rateLimiter.acquire();
-    const res = await api.uploadAttachment(
-      [{ data, filename, metadata: { totalSize: data.byteLength, width, height } }],
+    const res = await api.sendMessage(
+      { msg: caption, attachments: [{ data, filename, metadata: { totalSize: data.byteLength, width, height } }] },
       threadId,
       threadType === "group" ? ThreadType.Group : ThreadType.User,
     );
-    const urls: string[] = [];
-    for (const item of res) {
-      const img = item as { normalUrl?: string; hdUrl?: string; thumbUrl?: string };
-      for (const u of [img.normalUrl, img.hdUrl, img.thumbUrl]) if (u) urls.push(u);
-    }
-    return urls;
+    const ids: string[] = [];
+    if (res.message?.msgId != null) ids.push(String(res.message.msgId));
+    for (const a of res.attachment ?? []) if (a?.msgId != null) ids.push(String(a.msgId));
+    return ids;
   }
 
   /**

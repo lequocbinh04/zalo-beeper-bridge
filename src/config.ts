@@ -16,9 +16,12 @@ const configSchema = z.object({
   }),
   zalo: z.object({
     credsPath: z.string().min(1).default("zalo-creds.session.json"),
-    // Conservative pacing — bridge runs on the user's main Zalo account
-    messagesPerMinute: z.number().positive().max(30).default(8),
-  }).default({ credsPath: "zalo-creds.session.json", messagesPerMinute: 8 }),
+    // Token-bucket pacing: `burst` sends go through instantly (normal chatting),
+    // then refills at messagesPerMinute. Protects the main account from sustained spam
+    // without adding latency to real conversations.
+    messagesPerMinute: z.number().positive().max(240).default(60),
+    burst: z.number().int().positive().max(120).default(30),
+  }).default({ credsPath: "zalo-creds.session.json", messagesPerMinute: 60, burst: 30 }),
   bridge: z.object({
     dbPath: z.string().min(1).default("bridge.db"),
     mediaMaxBytes: z.number().int().positive().default(10 * 1024 * 1024),

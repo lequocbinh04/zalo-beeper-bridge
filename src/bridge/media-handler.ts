@@ -23,6 +23,42 @@ export interface FetchedMedia {
   mimetype: string;
 }
 
+/**
+ * Download Matrix media (mxc://) via the authenticated media endpoint.
+ * Beeper serves media behind auth + a redirect to R2; matrix-bot-sdk's
+ * downloadContent forwards the Authorization header to R2 and gets a 400.
+ * Native fetch strips auth on the cross-origin redirect, so it works.
+ */
+export async function downloadMatrixMedia(
+  homeserverUrl: string,
+  accessToken: string,
+  mxcUrl: string,
+  maxBytes: number,
+): Promise<FetchedMedia> {
+  const match = /^mxc:\/\/([^/]+)\/(.+)$/.exec(mxcUrl);
+  if (!match) throw new Error(`bad mxc url: ${mxcUrl}`);
+  const [, server, mediaId] = match;
+  const url = `${homeserverUrl}/_matrix/client/v1/media/download/${server}/${mediaId}`;
+  const response = await fetch(url, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    redirect: "follow",
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+  });
+  if (!response.ok) throw new Error(`matrix media download failed: HTTP ${response.status}`);
+  if (!response.body) throw new Error("matrix media download returned no body");
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for await (const chunk of response.body as AsyncIterable<Uint8Array>) {
+    total += chunk.byteLength;
+    if (total > maxBytes) throw new Error(`media exceeds size cap (>${maxBytes} bytes)`);
+    chunks.push(chunk);
+  }
+  return {
+    buffer: Buffer.concat(chunks),
+    mimetype: response.headers.get("content-type")?.split(";")[0] ?? "application/octet-stream",
+  };
+}
+
 /** Guarded download: https-only, Zalo CDN hosts, hard timeout, streamed byte cap. */
 export async function fetchMediaCapped(url: string, maxBytes: number): Promise<FetchedMedia> {
   const parsed = new URL(url);

@@ -12,7 +12,8 @@ zalo:
   # zca-js session credentials (auto-created on QR login; chmod 600; NEVER commit)
   credsPath: zalo-creds.session.json
   # Conservative outbound pacing to protect the Zalo account
-  messagesPerMinute: 8
+  messagesPerMinute: 60
+  burst: 30
 
 logging:
   level: info

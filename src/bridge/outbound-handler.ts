@@ -6,6 +6,7 @@
 import { imageSize } from "image-size";
 import type { Bridge, WeakEvent } from "matrix-appservice-bridge";
 import type { EchoSuppressor } from "./echo-suppressor.ts";
+import { downloadMatrixMedia } from "./media-handler.ts";
 import type { MappingStore, PortalRow } from "./mapping-store.ts";
 import type { ZaloClient } from "../zalo/zalo-client.ts";
 
@@ -21,6 +22,8 @@ export interface OutboundHandlerDeps {
   echo: EchoSuppressor;
   ownerUserId: string;
   mediaMaxBytes: number;
+  homeserverUrl: string;
+  matrixToken: string;
 }
 
 export class OutboundHandler {
@@ -53,9 +56,13 @@ export class OutboundHandler {
       "m.relates_to"?: { rel_type?: string; event_id?: string; "m.in_reply_to"?: { event_id?: string } };
     };
 
-    if (content.msgtype === "m.image" && content.url) {
-      await this.handleImage(event, portal, content.url, content.body);
-      return true;
+    if (content.msgtype === "m.image") {
+      // Encrypted rooms put the mxc under file.url; unencrypted under url
+      const mxc = content.url ?? (content as { file?: { url?: string } }).file?.url;
+      if (mxc) {
+        await this.handleImage(event, portal, mxc, content.body);
+        return true;
+      }
     }
     if (content.msgtype !== "m.text" || !content.body) {
       await this.notice(event.room_id, "[bridge] this message type is not supported outbound yet");
@@ -102,8 +109,13 @@ export class OutboundHandler {
     if (event.sender !== this.deps.ownerUserId) return;
     if (event.event_id && this.deps.store.hasEventId(event.event_id)) return;
     try {
-      const { data, contentType } = await this.deps.bridge.getIntent().matrixClient.downloadContent(mxcUrl);
-      if (data.byteLength > this.deps.mediaMaxBytes) throw new Error("image exceeds size cap");
+      // Authenticated-media download via fetch (bot-sdk's downloadContent 400s on Beeper's R2 redirect)
+      const { buffer: data, mimetype: contentType } = await downloadMatrixMedia(
+        this.deps.homeserverUrl,
+        this.deps.matrixToken,
+        mxcUrl,
+        this.deps.mediaMaxBytes,
+      );
       let width = 0;
       let height = 0;
       try {
@@ -115,8 +127,13 @@ export class OutboundHandler {
       }
       const ext = (contentType?.split("/")[1] ?? "jpg").split(";")[0];
       const filename = `${(filenameBody ?? "image").replace(/[^a-zA-Z0-9._-]/g, "_")}.${ext}` as `${string}.${string}`;
-      const urls = await this.deps.zalo.sendImage(portal.thread_id, portal.thread_type, data, filename, width, height);
-      this.deps.echo.expectMedia(urls); // drop the selfListen echo of our own image
+      // Arm the pre-send guard before the network call: the selfListen echo can
+      // arrive before sendImage resolves and we record its msgId
+      this.deps.echo.expectImage(portal.thread_id);
+      const msgIds = await this.deps.zalo.sendImage(portal.thread_id, portal.thread_type, data, filename, width, height);
+      // Record sent msgIds so the selfListen echo is deduped by id; the first msgId
+      // carries the Matrix event_id so redacting the image in Beeper can recall it on Zalo
+      msgIds.forEach((msgId, i) => this.deps.store.recordMessage(msgId, portal.room_id, i === 0 ? (event.event_id ?? null) : null, "outbound"));
     } catch (err) {
       await this.notice(event.room_id!, `⚠ Failed to send image to Zalo: ${(err as Error).message}`);
     }
