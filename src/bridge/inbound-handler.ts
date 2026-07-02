@@ -46,7 +46,7 @@ export class InboundHandler {
 
     // Our own send echoed back by selfListen → already visible in Beeper, don't repost
     const isTextEcho = msg.isSelf && msg.content.kind === "text" && this.deps.echo.consume(msg.threadId, msg.content.text);
-    const isMediaEcho = msg.isSelf && msg.content.kind === "photo" && this.deps.echo.consumeMedia(msg.content.url);
+    const isMediaEcho = msg.isSelf && msg.content.kind === "photo" && this.deps.echo.consumeImage(msg.threadId);
     if (isTextEcho || isMediaEcho) {
       // The echo carries the cliMsgId our send response lacked — record it so the
       // owner can later recall this message from Beeper (undo needs msgId + cliMsgId)

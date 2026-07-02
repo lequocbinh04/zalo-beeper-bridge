@@ -1,28 +1,34 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RateLimiter } from "../rate-limiter.ts";
 
-describe("RateLimiter", () => {
+describe("RateLimiter (token bucket)", () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
 
-  it("grants the first acquire immediately", async () => {
-    const limiter = new RateLimiter(6); // 10s interval
+  it("lets a burst of sends through instantly", async () => {
+    const limiter = new RateLimiter(30, 5); // burst of 5
     const t0 = Date.now();
-    await limiter.acquire();
-    expect(Date.now() - t0).toBe(0);
+    for (let i = 0; i < 5; i++) await limiter.acquire();
+    expect(Date.now() - t0).toBe(0); // all 5 immediate
   });
 
-  it("spaces successive grants by the configured interval", async () => {
-    const limiter = new RateLimiter(6); // 10s interval
+  it("paces once the burst is exhausted", async () => {
+    const limiter = new RateLimiter(60, 2); // burst 2, refill 1/sec
     await limiter.acquire();
-    const done: number[] = [];
-    const p2 = limiter.acquire().then(() => done.push(Date.now()));
-    const p3 = limiter.acquire().then(() => done.push(Date.now()));
-    await vi.advanceTimersByTimeAsync(10_000);
-    await p2;
-    await vi.advanceTimersByTimeAsync(10_000);
-    await p3;
-    expect(done[1]! - done[0]!).toBe(10_000);
+    await limiter.acquire(); // burst used up
+    const p = limiter.acquire().then(() => Date.now());
+    await vi.advanceTimersByTimeAsync(1000); // one token refills after ~1s
+    const grantedAt = await p;
+    expect(grantedAt).toBeGreaterThanOrEqual(1000);
+  });
+
+  it("refills over time so later sends are instant again", async () => {
+    const limiter = new RateLimiter(60, 1); // burst 1, refill 1/sec
+    await limiter.acquire();
+    await vi.advanceTimersByTimeAsync(5000); // idle 5s → bucket refills (capped at burst)
+    const t = Date.now();
+    await limiter.acquire();
+    expect(Date.now() - t).toBe(0);
   });
 
   it("rejects a non-positive rate", () => {

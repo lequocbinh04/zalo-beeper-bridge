@@ -20,6 +20,7 @@ const config = loadConfig();
 const zalo = new ZaloClient({
   credsPath: config.zalo.credsPath,
   messagesPerMinute: config.zalo.messagesPerMinute,
+  burst: config.zalo.burst,
 });
 
 const store = new MappingStore(config.bridge.dbPath);
@@ -68,14 +69,28 @@ const inbound = new InboundHandler({
   resolveGroupName: (threadId) => zalo.getGroupName(threadId),
   resolveStickerUrl: (stickerId) => zalo.getStickerImageUrl(stickerId),
 });
-const outbound = new OutboundHandler({ bridge, store, zalo, echo, ownerUserId: config.matrix.owner, mediaMaxBytes: config.bridge.mediaMaxBytes });
+// Registration holds the as_token used for authenticated-media downloads + the ghost namespace
+const registration = loadYaml(fs.readFileSync(config.matrix.registrationPath, "utf8")) as {
+  as_token?: string;
+  namespaces?: { users?: Array<{ regex: string }> };
+};
+const asToken = registration.as_token;
+if (!asToken) throw new Error(`No as_token in ${config.matrix.registrationPath}`);
+
+const outbound = new OutboundHandler({
+  bridge,
+  store,
+  zalo,
+  echo,
+  ownerUserId: config.matrix.owner,
+  mediaMaxBytes: config.bridge.mediaMaxBytes,
+  homeserverUrl: config.matrix.homeserverUrl,
+  matrixToken: asToken,
+});
 const sync = new SyncManager({ zalo, portals, inbound });
 ctx.runSync = () => sync.run();
 
 // Fail fast if computed ghost MXIDs cannot be registered under this appservice
-const registration = loadYaml(fs.readFileSync(config.matrix.registrationPath, "utf8")) as {
-  namespaces?: { users?: Array<{ regex: string }> };
-};
 const usersRegex = registration.namespaces?.users?.[0]?.regex;
 if (!usersRegex) throw new Error(`No user namespace in ${config.matrix.registrationPath}`);
 assertGhostNamespace(usersRegex, puppets.mxidFor("1234567890"));

@@ -13,21 +13,31 @@ interface PendingEcho {
 
 export class EchoSuppressor {
   private readonly pending = new Map<string, PendingEcho[]>();
-  // Media echoes match on URL (images have no pre-send msgId) — url → expiry
-  private readonly pendingMedia = new Map<string, number>();
+  // Outbound images have neither a pre-send msgId nor a known CDN url, so guard by
+  // a per-thread "image just sent" window: threadId → array of send expiries
+  private readonly pendingImages = new Map<string, number[]>();
 
-  /** Register the URLs of an image we just sent so its selfListen echo is dropped. */
-  expectMedia(urls: string[]): void {
-    const expiry = Date.now() + TTL_MS;
-    for (const url of urls) if (url) this.pendingMedia.set(url, expiry);
+  /** Arm BEFORE sending an image (we don't yet know its msgId or CDN url). */
+  expectImage(threadId: string): void {
+    const list = (this.pendingImages.get(threadId) ?? []).filter((e) => e > Date.now());
+    list.push(Date.now() + TTL_MS);
+    this.pendingImages.set(threadId, list);
   }
 
-  /** True when this inbound media URL is the echo of something we just sent. */
-  consumeMedia(url: string): boolean {
-    const expiry = this.pendingMedia.get(url);
-    if (expiry === undefined) return false;
-    this.pendingMedia.delete(url);
-    return expiry > Date.now();
+  /** True (consuming one marker) when a self photo in this thread is our own echo. */
+  consumeImage(threadId: string): boolean {
+    const list = this.pendingImages.get(threadId);
+    if (!list) return false;
+    const now = Date.now();
+    const idx = list.findIndex((e) => e > now);
+    if (idx === -1) {
+      this.pendingImages.delete(threadId);
+      return false;
+    }
+    list.splice(idx, 1);
+    if (list.length) this.pendingImages.set(threadId, list);
+    else this.pendingImages.delete(threadId);
+    return true;
   }
 
   /** Call right before sending to Zalo. */
