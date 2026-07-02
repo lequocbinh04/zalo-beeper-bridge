@@ -57,9 +57,13 @@ export class PresenceHandler {
     const eventId = this.store.getEventIdByMsgId(event.msgId);
     if (!eventId) return; // message predates the bridge or wasn't bridged
 
-    // DM: the peer (thread id) saw it; group: exactly the uids Zalo reports
+    // DM: the peer (thread id) saw it; group: exactly the uids Zalo reports.
+    // Never emit a receipt for the owner's own uid — that would join an
+    // owner-doppelganger ghost into the room ("seen by @sh-zalo_<own-uid>").
     const ownId = this.getOwnZaloId();
-    const uids = (event.threadType === "user" ? [event.threadId] : event.seenUids).filter((uid) => uid !== ownId);
+    const uids = (event.threadType === "user" ? [event.threadId] : event.seenUids).filter(
+      (uid) => String(uid) !== ownId && uid !== "",
+    );
     for (const uid of uids) {
       await this.puppets
         .intentFor(uid)

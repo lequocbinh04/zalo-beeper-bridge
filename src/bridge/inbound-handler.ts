@@ -48,7 +48,16 @@ export class InboundHandler {
     const isTextEcho = msg.isSelf && msg.content.kind === "text" && this.deps.echo.consume(msg.threadId, msg.content.text);
     const isMediaEcho = msg.isSelf && msg.content.kind === "photo" && this.deps.echo.consumeMedia(msg.content.url);
     if (isTextEcho || isMediaEcho) {
-      this.deps.store.recordMessage(msg.msgId, this.deps.store.getPortalByThread(msg.threadId)?.room_id ?? "", null, "outbound");
+      // The echo carries the cliMsgId our send response lacked — record it so the
+      // owner can later recall this message from Beeper (undo needs msgId + cliMsgId)
+      this.deps.store.recordMessage(
+        msg.msgId,
+        this.deps.store.getPortalByThread(msg.threadId)?.room_id ?? "",
+        null,
+        "outbound",
+        null,
+        msg.cliMsgId ?? null,
+      );
       return;
     }
 

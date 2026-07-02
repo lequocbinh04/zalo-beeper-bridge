@@ -135,12 +135,12 @@ export class MappingStore {
     const result = this.db
       .prepare("INSERT OR IGNORE INTO message (zalo_msg_id, room_id, event_id, direction, ts, quote_json, cli_msg_id) VALUES (?, ?, ?, ?, ?, ?, ?)")
       .run(zaloMsgId, roomId, eventId, direction, Date.now(), quoteJson, cliMsgId);
-    if (result.changes === 0 && eventId) {
-      // Echo-before-response ordering records msgId with a null event first;
-      // fill it in when the real event id arrives so read receipts can map
-      this.db
-        .prepare("UPDATE message SET event_id = ? WHERE zalo_msg_id = ? AND event_id IS NULL")
-        .run(eventId, zaloMsgId);
+    if (result.changes === 0) {
+      // Outbound send and its selfListen echo race to record the same msgId; each
+      // carries a different piece (send → event_id, echo → cli_msg_id). Backfill
+      // whichever null field the loser supplies so recall/receipts have both.
+      if (eventId) this.db.prepare("UPDATE message SET event_id = ? WHERE zalo_msg_id = ? AND event_id IS NULL").run(eventId, zaloMsgId);
+      if (cliMsgId) this.db.prepare("UPDATE message SET cli_msg_id = ? WHERE zalo_msg_id = ? AND cli_msg_id IS NULL").run(cliMsgId, zaloMsgId);
     }
     return result.changes === 1;
   }
@@ -153,12 +153,18 @@ export class MappingStore {
     return row?.quote_json ?? null;
   }
 
-  /** Zalo target ids for a Matrix event — reaction/undo need both msgId and cliMsgId. */
-  getZaloTargetByEventId(eventId: string): { zaloMsgId: string; cliMsgId: string | null; roomId: string } | null {
-    const row = this.db.prepare("SELECT zalo_msg_id, cli_msg_id, room_id FROM message WHERE event_id = ?").get(eventId) as
-      | { zalo_msg_id: string; cli_msg_id: string | null; room_id: string }
+  /** Zalo target ids for a Matrix event — reaction/undo need msgId (+cliMsgId when known). */
+  getZaloTargetByEventId(
+    eventId: string,
+  ): { zaloMsgId: string; cliMsgId: string | null; roomId: string; direction: MessageDirection } | null {
+    const row = this.db
+      .prepare("SELECT zalo_msg_id, cli_msg_id, room_id, direction FROM message WHERE event_id = ?")
+      .get(eventId) as
+      | { zalo_msg_id: string; cli_msg_id: string | null; room_id: string; direction: MessageDirection }
       | undefined;
-    return row ? { zaloMsgId: row.zalo_msg_id, cliMsgId: row.cli_msg_id, roomId: row.room_id } : null;
+    return row
+      ? { zaloMsgId: row.zalo_msg_id, cliMsgId: row.cli_msg_id, roomId: row.room_id, direction: row.direction }
+      : null;
   }
 
   /** Matrix event for a Zalo msgId + who bridged it (inbound reaction → annotate). */

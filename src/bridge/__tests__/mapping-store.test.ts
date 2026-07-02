@@ -42,6 +42,18 @@ describe("MappingStore", () => {
     expect(store.hasMessage("m2")).toBe(false);
   });
 
+  it("backfills event_id and cli_msg_id across the outbound/echo race (either order)", () => {
+    // echo first (cli only), then outbound (event only)
+    store.recordMessage("mA", "!r:x", null, "outbound", null, "cliA");
+    store.recordMessage("mA", "!r:x", "$evA", "outbound", null, null);
+    expect(store.getZaloTargetByEventId("$evA")).toEqual({ zaloMsgId: "mA", cliMsgId: "cliA", roomId: "!r:x", direction: "outbound" });
+
+    // outbound first (event only), then echo (cli only)
+    store.recordMessage("mB", "!r:x", "$evB", "outbound", null, null);
+    store.recordMessage("mB", "!r:x", null, "outbound", null, "cliB");
+    expect(store.getZaloTargetByEventId("$evB")).toEqual({ zaloMsgId: "mB", cliMsgId: "cliB", roomId: "!r:x", direction: "outbound" });
+  });
+
   it("tracks puppet display-name changes for profile sync", () => {
     expect(store.upsertPuppet("u1", "@sh-zalo_u1:x", "Old Name")).toBe(true); // new with name
     expect(store.upsertPuppet("u1", "@sh-zalo_u1:x", "Old Name")).toBe(false); // unchanged

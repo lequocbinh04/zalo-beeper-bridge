@@ -144,13 +144,14 @@ export class ZaloClient extends EventEmitter<ZaloClientEvents> {
       }
     });
     this.api.listener.on("seen_messages", (seenList) => {
-      for (const seen of seenList as Array<{ type: number; threadId: string; data: { msgId: string; seenUids?: string[] } }>) {
+      for (const seen of seenList as Array<{ type: number; threadId: string; data: { msgId: string; seenUids?: Array<string | number> } }>) {
         if (!seen?.data?.msgId) continue;
         this.emit("seen", {
-          threadId: seen.threadId,
+          threadId: String(seen.threadId),
           threadType: seen.type === 1 ? "group" : "user",
           msgId: String(seen.data.msgId),
-          seenUids: seen.data.seenUids ?? [],
+          // Coerce: Zalo sends numeric uids here; own-uid filtering compares strings
+          seenUids: (seen.data.seenUids ?? []).map(String),
         });
       }
     });

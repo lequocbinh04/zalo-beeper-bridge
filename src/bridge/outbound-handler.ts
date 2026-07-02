@@ -127,9 +127,10 @@ export class OutboundHandler {
     const relates = (event.content as { "m.relates_to"?: { event_id?: string; key?: string } })["m.relates_to"];
     if (!relates?.event_id || !relates.key) return true;
     const target = this.deps.store.getZaloTargetByEventId(relates.event_id);
-    if (!target?.cliMsgId) return true; // can only react to messages we have full ids for
+    if (!target) return true;
     try {
-      await this.deps.zalo.react(portal.thread_id, portal.thread_type, target.zaloMsgId, target.cliMsgId, relates.key);
+      // Zalo accepts cliMsgId 0 when unknown (verified live against the undo/react endpoints)
+      await this.deps.zalo.react(portal.thread_id, portal.thread_type, target.zaloMsgId, target.cliMsgId ?? "0", relates.key);
     } catch (err) {
       console.warn("outbound reaction failed:", (err as Error).message);
     }
@@ -141,13 +142,15 @@ export class OutboundHandler {
     const redacts = (event as { redacts?: string }).redacts ?? (event.content as { redacts?: string }).redacts;
     if (!redacts) return true;
     const target = this.deps.store.getZaloTargetByEventId(redacts);
-    // Zalo can only recall our OWN messages, which need the cliMsgId we generated
-    if (!target?.cliMsgId) {
-      await this.notice(portal.room_id, "[bridge] can't recall this on Zalo (only messages sent from Beeper can be recalled)");
+    if (!target) return true; // not a bridged message
+    // Zalo can only recall the account's OWN messages (same rule as the app)
+    if (target.direction !== "outbound") {
+      await this.notice(portal.room_id, "[bridge] Zalo only allows recalling your own messages");
       return true;
     }
     try {
-      await this.deps.zalo.recall(portal.thread_id, portal.thread_type, target.zaloMsgId, target.cliMsgId);
+      // cliMsgId 0 is accepted by Zalo's undo endpoint (verified live: status 0)
+      await this.deps.zalo.recall(portal.thread_id, portal.thread_type, target.zaloMsgId, target.cliMsgId ?? "0");
     } catch (err) {
       await this.notice(portal.room_id, `⚠ Zalo recall failed: ${(err as Error).message}`);
     }
@@ -155,6 +158,11 @@ export class OutboundHandler {
   }
 
   private async notice(roomId: string, body: string): Promise<void> {
-    await this.deps.bridge.getIntent().sendMessage(roomId, { msgtype: "m.notice", body });
+    // Best-effort: the bot isn't a member of DM portals (created by the ghost), so
+    // a notice there fails to join — never let that bubble up as a handler error
+    await this.deps.bridge
+      .getIntent()
+      .sendMessage(roomId, { msgtype: "m.notice", body })
+      .catch((err: Error) => console.warn(`notice to ${roomId} failed:`, err.message));
   }
 }
