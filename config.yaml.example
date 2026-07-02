@@ -27,4 +27,5 @@ bridge:
 network:
   # Display name + logo shown in Beeper (the internal id stays the bbctl name, e.g. sh-zalo)
   name: Zalo
+  networkId: zalo
   logoPath: assets/zalo-logo.png

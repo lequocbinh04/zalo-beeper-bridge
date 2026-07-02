@@ -56,8 +56,24 @@ const bridge = createBridge(
 );
 ctx.bridge = bridge;
 
+// Registration holds the as_token, ghost namespace, and the appservice id used
+// to build the bridge-info state_key (<domain>/<appservice-id>, e.g. beeper.local/sh-zalo)
+const registration = loadYaml(fs.readFileSync(config.matrix.registrationPath, "utf8")) as {
+  as_token?: string;
+  sender_localpart?: string;
+  namespaces?: { users?: Array<{ regex: string }> };
+};
+const asToken = registration.as_token;
+if (!asToken) throw new Error(`No as_token in ${config.matrix.registrationPath}`);
+// appservice id = sender_localpart minus the trailing "bot" (sh-zalobot → sh-zalo)
+const bridgeAppId = (registration.sender_localpart ?? "sh-zalobot").replace(/bot$/, "");
+const branding = {
+  ...config.network,
+  stateKey: `${config.matrix.domain}/${bridgeAppId}`,
+};
+
 const puppets = new PuppetRegistry(bridge, store, config.matrix.domain, (uid) => zalo.getUserProfile(uid));
-const portals = new PortalManager(bridge, store, puppets, config.matrix.owner, config.network);
+const portals = new PortalManager(bridge, store, puppets, config.matrix.owner, branding);
 const inbound = new InboundHandler({
   bridge,
   store,
@@ -69,13 +85,6 @@ const inbound = new InboundHandler({
   resolveGroupName: (threadId) => zalo.getGroupName(threadId),
   resolveStickerUrl: (stickerId) => zalo.getStickerImageUrl(stickerId),
 });
-// Registration holds the as_token used for authenticated-media downloads + the ghost namespace
-const registration = loadYaml(fs.readFileSync(config.matrix.registrationPath, "utf8")) as {
-  as_token?: string;
-  namespaces?: { users?: Array<{ regex: string }> };
-};
-const asToken = registration.as_token;
-if (!asToken) throw new Error(`No as_token in ${config.matrix.registrationPath}`);
 
 const outbound = new OutboundHandler({
   bridge,
@@ -107,7 +116,7 @@ zalo.on("reaction", (ev) => void presence.handleReaction(ev).catch((err) => cons
 // Appservice MUST be up before the Zalo listener: intents throw pre-initialise,
 // and the old_messages replay burst arrives immediately on ws connect
 await startBridge(bridge, config);
-await ensureNetworkIdentity(bridge, config.network);
+await ensureNetworkIdentity(bridge, branding);
 // Backfill the network chip on portals created before branding existed
 void portals.rebrandExistingPortals().catch((err) => console.warn("portal rebrand failed:", err));
 

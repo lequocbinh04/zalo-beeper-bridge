@@ -39,10 +39,11 @@ export class PortalManager {
 
   /** Re-emit the network state event on every existing portal (branding backfill). */
   async rebrandExistingPortals(): Promise<void> {
+    const botMxid = this.bridge.getBot().getUserId();
     for (const portal of this.store.getAllPortals()) {
       // State must be sent by a member with power: the ghost created DMs, the bot created groups
       const intent = portal.thread_type === "user" ? this.puppets.intentFor(portal.thread_id) : this.bridge.getIntent();
-      await tagPortalNetwork(intent, portal.room_id, portal.name ?? this.branding.name, this.branding);
+      await tagPortalNetwork(intent, portal.room_id, portal.thread_id, portal.name ?? this.branding.name, portal.thread_type, this.branding, botMxid);
     }
   }
 
@@ -110,7 +111,7 @@ export class PortalManager {
     this.store.insertPortal(row);
     // Network state must be sent by the room creator (ghost for DM, bot for group)
     const brandIntent = ctx.threadType === "user" ? this.puppets.intentFor(ctx.senderId) : this.bridge.getIntent();
-    await tagPortalNetwork(brandIntent, row.room_id, row.name ?? this.branding.name, this.branding);
+    await tagPortalNetwork(brandIntent, row.room_id, row.thread_id, row.name ?? this.branding.name, row.thread_type, this.branding, this.bridge.getBot().getUserId());
     await this.ensureOwnerJoined(row.room_id);
     return row;
   }

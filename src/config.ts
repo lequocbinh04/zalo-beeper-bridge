@@ -30,7 +30,8 @@ const configSchema = z.object({
   network: z.object({
     name: z.string().min(1).default("Zalo"),
     logoPath: z.string().min(1).default("assets/zalo-logo.png"),
-  }).default({ name: "Zalo", logoPath: "assets/zalo-logo.png" }),
+    networkId: z.string().min(1).default("zalo"),
+  }).default({ name: "Zalo", logoPath: "assets/zalo-logo.png", networkId: "zalo" }),
   logging: z.object({
     level: z.enum(["debug", "info", "warn", "error"]).default("info"),
   }).default({ level: "info" }),
