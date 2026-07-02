@@ -6,6 +6,8 @@ interface PhotoContent {
   href?: string;
   thumb?: string;
   params?: string; // JSON string: {width, height, hd, ...}
+  title?: string; // Zalo puts the photo caption here
+  description?: string;
 }
 
 interface StickerContent {
@@ -29,7 +31,7 @@ function normalizeContent(msgType: string, content: unknown): ZaloContent {
       } catch {
         // params malformed — dimensions are optional
       }
-      return { kind: "photo", url: photo.href, thumbUrl: photo.thumb, width, height };
+      return { kind: "photo", url: photo.href, thumbUrl: photo.thumb, width, height, caption: photo.title || photo.description || undefined };
     }
   }
   if (msgType === "chat.sticker" && typeof content === "object" && content !== null) {

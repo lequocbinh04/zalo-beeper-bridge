@@ -7,6 +7,7 @@ export interface InboundPhoto {
   url: string;
   width?: number;
   height?: number;
+  caption?: string;
 }
 
 export interface MediaResult {
@@ -118,10 +119,12 @@ export async function bridgeInboundPhoto(
   maxBytes: number,
 ): Promise<MediaResult> {
   const { buffer, mimetype } = await fetchMediaCapped(photo.url, maxBytes);
-  const mxcUrl = await intent.uploadContent(buffer, { type: mimetype, name: "zalo-photo" });
-  const { event_id } = await intent.sendMessage(roomId, {
+  const ext = mimetype.split("/")[1]?.split(";")[0] ?? "jpg";
+  const mxcUrl = await intent.uploadContent(buffer, { type: mimetype, name: `zalo-photo.${ext}` });
+  // MSC2530 caption: body = caption, filename = the actual file name (kept distinct)
+  const content: Record<string, unknown> = {
     msgtype: "m.image",
-    body: "photo",
+    body: photo.caption || `zalo-photo.${ext}`,
     url: mxcUrl,
     info: {
       mimetype,
@@ -129,6 +132,8 @@ export async function bridgeInboundPhoto(
       ...(photo.width ? { w: photo.width } : {}),
       ...(photo.height ? { h: photo.height } : {}),
     },
-  });
+  };
+  if (photo.caption) content.filename = `zalo-photo.${ext}`;
+  const { event_id } = await intent.sendMessage(roomId, content);
   return { eventId: event_id };
 }

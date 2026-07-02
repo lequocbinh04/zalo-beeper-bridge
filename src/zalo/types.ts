@@ -5,7 +5,7 @@ export type ZaloThreadType = "user" | "group";
 
 export type ZaloContent =
   | { kind: "text"; text: string }
-  | { kind: "photo"; url: string; thumbUrl?: string; width?: number; height?: number }
+  | { kind: "photo"; url: string; thumbUrl?: string; width?: number; height?: number; caption?: string }
   | { kind: "sticker"; id: number; catId: number }
   | { kind: "unsupported"; msgType: string };
 

@@ -131,10 +131,14 @@ export class OutboundHandler {
         this.deps.mediaMaxBytes,
       );
       const mimetype = content.info?.mimetype ?? dlType;
-      const filename = buildFilename(msgtype, content.filename ?? content.body, mimetype);
+      // MSC2530 caption: when body differs from the filename, body is the caption.
+      // Attach it to the media message so Zalo shows one captioned message, not two.
+      const caption = content.body && content.body !== content.filename ? content.body : "";
+      const filename = buildFilename(msgtype, content.filename, mimetype);
       // Arm the pre-send guard before the network call: the selfListen echo can
       // arrive before the send resolves and we record its msgId
       this.deps.echo.expectImage(portal.thread_id);
+      if (caption) this.deps.echo.expect(portal.thread_id, caption); // caption echoes as a text selfListen event
       let msgIds: string[];
       if (msgtype === "m.image") {
         let width = 0;
@@ -146,10 +150,10 @@ export class OutboundHandler {
         } catch {
           // dimensions optional
         }
-        msgIds = await this.deps.zalo.sendImage(portal.thread_id, portal.thread_type, data, filename, width, height);
+        msgIds = await this.deps.zalo.sendImage(portal.thread_id, portal.thread_type, data, filename, width, height, caption);
       } else {
         // video (.mp4) / file / audio — zca-js routes by extension
-        msgIds = await this.deps.zalo.sendFile(portal.thread_id, portal.thread_type, data, filename);
+        msgIds = await this.deps.zalo.sendFile(portal.thread_id, portal.thread_type, data, filename, caption);
       }
       // Record msgIds for echo dedup; first carries the Matrix event_id so redacting recalls it on Zalo
       msgIds.forEach((msgId, i) => this.deps.store.recordMessage(msgId, portal.room_id, i === 0 ? (event.event_id ?? null) : null, "outbound"));
