@@ -33,11 +33,35 @@ export function buildInboundMentions(
     userIds.add(mxid);
     html += escapeHtml(text.slice(cursor, m.pos));
     const label = escapeHtml(text.slice(m.pos, m.pos + m.len));
-    html += `<a href="https://matrix.to/#/${encodeURIComponent(mxid)}">${label}</a>`;
+    // Raw MXID in the matrix.to link — clients only detect pills in this literal
+    // form; percent-encoding (%40/%3A) makes them render as a plain link instead.
+    html += `<a href="https://matrix.to/#/${mxid}">${label}</a>`;
     cursor = m.pos + m.len;
   }
   html += escapeHtml(text.slice(cursor));
   return { formattedBody: html, userIds: [...userIds] };
+}
+
+/**
+ * Matrix → Zalo mentions from `m.mentions.user_ids` (Beeper sends these WITHOUT a
+ * formatted_body pill). resolve maps an MXID to {uid, name}; we locate "@name" in
+ * the plain body to get pos/len. Used as the primary path since Beeper omits pills.
+ */
+export function mentionsFromUserIds(
+  body: string,
+  userIds: string[],
+  resolve: (mxid: string) => { uid: string; name: string } | null,
+): ZaloMention[] {
+  const out: ZaloMention[] = [];
+  for (const mxid of userIds) {
+    const r = resolve(mxid);
+    if (!r?.name) continue;
+    const label = `@${r.name}`;
+    const pos = body.indexOf(label);
+    if (pos === -1) continue;
+    out.push({ uid: r.uid, pos, len: label.length });
+  }
+  return out;
 }
 
 /**
@@ -52,12 +76,15 @@ export function parseOutboundMentions(
 ): ZaloMention[] {
   if (!formattedBody) return [];
   const out: ZaloMention[] = [];
-  const anchor = /<a href="https:\/\/matrix\.to\/#\/([^"]+)">([^<]*)<\/a>/g;
+  // Tolerant: href may sit among other attributes; the label may contain markup.
+  const anchor = /<a\b[^>]*\bhref="https:\/\/matrix\.to\/#\/([^"]+)"[^>]*>(.*?)<\/a>/gi;
   const usedUpto = new Map<string, number>(); // label → search start (handle repeats)
   let match: RegExpExecArray | null;
   while ((match = anchor.exec(formattedBody)) !== null) {
     const mxid = decodeURIComponent(match[1]!);
-    const label = match[2]!.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"');
+    const label = match[2]!
+      .replace(/<[^>]+>/g, "") // strip any nested tags in the pill label
+      .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"');
     const uid = resolveUid(mxid);
     if (!uid) continue;
     const from = usedUpto.get(label) ?? 0;

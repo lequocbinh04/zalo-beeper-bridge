@@ -68,6 +68,13 @@ export class MappingStore {
     `);
   }
 
+  getPuppetDisplayName(zaloUid: string): string | null {
+    const row = this.db.prepare("SELECT display_name FROM puppet WHERE zalo_uid = ?").get(zaloUid) as
+      | { display_name: string | null }
+      | undefined;
+    return row?.display_name ?? null;
+  }
+
   getPuppetAvatarUrl(zaloUid: string): string | null {
     const row = this.db.prepare("SELECT avatar_url FROM puppet WHERE zalo_uid = ?").get(zaloUid) as
       | { avatar_url: string | null }

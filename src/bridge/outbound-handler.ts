@@ -7,7 +7,7 @@ import { imageSize } from "image-size";
 import type { Bridge, WeakEvent } from "matrix-appservice-bridge";
 import type { EchoSuppressor } from "./echo-suppressor.ts";
 import { downloadMatrixMedia } from "./media-handler.ts";
-import { parseOutboundMentions } from "./mentions.ts";
+import { mentionsFromUserIds, parseOutboundMentions } from "./mentions.ts";
 import type { MappingStore, PortalRow } from "./mapping-store.ts";
 import type { ZaloClient } from "../zalo/zalo-client.ts";
 
@@ -97,7 +97,8 @@ export class OutboundHandler {
       body?: string;
       url?: string;
       formatted_body?: string;
-      "m.new_content"?: { body?: string; formatted_body?: string };
+      "m.mentions"?: { user_ids?: string[] };
+      "m.new_content"?: { body?: string; formatted_body?: string; "m.mentions"?: { user_ids?: string[] } };
       "m.relates_to"?: { rel_type?: string; event_id?: string; "m.in_reply_to"?: { event_id?: string } };
     };
 
@@ -137,13 +138,24 @@ export class OutboundHandler {
       }
     }
 
-    // @mentions: Matrix pills → Zalo mentions on the FINAL body (owner + ghost MXIDs → uids)
-    const formattedBody = isEdit ? content["m.new_content"]?.formatted_body : content.formatted_body;
-    const mentions = parseOutboundMentions(body, formattedBody, (mxid) => {
+    // @mentions → Zalo mentions on the FINAL body. Beeper sends m.mentions.user_ids
+    // without a formatted_body pill, so that's the primary source; pills are a fallback.
+    const userIds = (isEdit ? content["m.new_content"]?.["m.mentions"] : content["m.mentions"])?.user_ids ?? [];
+    const uidFromMxid = (mxid: string): string | null => {
       if (mxid === this.deps.ownerUserId) return this.deps.zalo.ownId;
       const m = /^@sh-zalo_(.+):/.exec(mxid);
       return m ? m[1]! : null;
+    };
+    let mentions = mentionsFromUserIds(body, userIds, (mxid) => {
+      const uid = uidFromMxid(mxid);
+      if (!uid) return null;
+      const name = mxid === this.deps.ownerUserId ? null : this.deps.store.getPuppetDisplayName(uid);
+      return name ? { uid, name } : null;
     });
+    if (mentions.length === 0) {
+      const formattedBody = isEdit ? content["m.new_content"]?.formatted_body : content.formatted_body;
+      mentions = parseOutboundMentions(body, formattedBody, uidFromMxid);
+    }
 
     try {
       // expect() runs via onBeforeSend AFTER the rate-limit wait — the suppression
@@ -171,7 +183,6 @@ export class OutboundHandler {
           mentions,
         );
       }
-      console.log(`[out-send] evt=${event.event_id} msgId=${result.msgId} body=${JSON.stringify(body.slice(0, 40))}`);
       if (result.msgId) this.deps.store.recordMessage(result.msgId, event.room_id, event.event_id ?? null, "outbound");
       else if (event.event_id) this.deps.store.markOutboundHandled(event.event_id, event.room_id);
     } catch (err) {

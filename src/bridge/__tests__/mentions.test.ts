@@ -13,7 +13,7 @@ describe("buildInboundMentions (Zalo → Matrix)", () => {
     const r = buildInboundMentions(text, mentions, resolve);
     expect(r.userIds).toEqual(["@sh-zalo_111:beeper.local", "@sh-zalo_222:beeper.local"]);
     expect(r.formattedBody).toBe(
-      'hi <a href="https://matrix.to/#/%40sh-zalo_111%3Abeeper.local">@Tuan</a> and <a href="https://matrix.to/#/%40sh-zalo_222%3Abeeper.local">@Binh</a>',
+      'hi <a href="https://matrix.to/#/@sh-zalo_111:beeper.local">@Tuan</a> and <a href="https://matrix.to/#/@sh-zalo_222:beeper.local">@Binh</a>',
     );
   });
 
