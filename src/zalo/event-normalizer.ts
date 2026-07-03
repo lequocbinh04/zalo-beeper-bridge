@@ -83,5 +83,6 @@ export function normalizeZaloMessage(raw: RawZaloMessage): ZaloMessage | null {
     },
     // Zalo quote → the quoted message's global msgId (Matrix reply mapping)
     replyToMsgId: d.quote?.globalMsgId != null ? String(d.quote.globalMsgId) : undefined,
+    mentions: d.mentions?.map((m) => ({ uid: String(m.uid), pos: m.pos, len: m.len })),
   };
 }

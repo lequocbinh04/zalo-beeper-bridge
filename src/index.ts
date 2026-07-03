@@ -88,6 +88,7 @@ const inbound = new InboundHandler({
   mediaMaxBytes: config.bridge.mediaMaxBytes,
   resolveGroupName: (threadId) => zalo.getGroupName(threadId),
   resolveStickerUrl: (stickerId) => zalo.getStickerImageUrl(stickerId),
+  getOwnZaloId: () => zalo.ownId,
   bridgedEventIds,
 });
 

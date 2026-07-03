@@ -4,6 +4,7 @@
 import type { Bridge } from "matrix-appservice-bridge";
 import type { EchoSuppressor } from "./echo-suppressor.ts";
 import { bridgeInboundPhoto, bridgeInboundSticker } from "./media-handler.ts";
+import { buildInboundMentions } from "./mentions.ts";
 import { SELF_BRIDGE_MARKER } from "./outbound-handler.ts";
 import type { MappingStore } from "./mapping-store.ts";
 import type { PortalManager } from "./portal-manager.ts";
@@ -20,6 +21,8 @@ export interface InboundHandlerDeps {
   mediaMaxBytes: number;
   resolveGroupName: (threadId: string) => Promise<string | null>;
   resolveStickerUrl: (stickerId: number) => Promise<string | null>;
+  /** own Zalo uid, to map a self-mention to the owner MXID (null until logged in) */
+  getOwnZaloId: () => string | null;
   /** shared with OutboundHandler: event_ids the bridge posted as the owner
    * (own phone messages) so they are never sent back to Zalo (anti-loop). */
   bridgedEventIds: Set<string>;
@@ -103,7 +106,18 @@ export class InboundHandler {
     let eventId: string | null = null;
     switch (msg.content.kind) {
       case "text": {
-        const r = await intent.sendMessage(portal.room_id, { msgtype: "m.text", body: msg.content.text, ...extra });
+        const textContent: Record<string, unknown> = { msgtype: "m.text", body: msg.content.text, ...extra };
+        // @mentions → matrix.to pills + m.mentions so Beeper renders and notifies
+        if (msg.mentions?.length) {
+          const ownId = this.deps.getOwnZaloId();
+          const { formattedBody, userIds } = buildInboundMentions(msg.content.text, msg.mentions, (uid) =>
+            uid === ownId ? this.deps.ownerUserId : this.deps.puppets.mxidFor(uid),
+          );
+          textContent.format = "org.matrix.custom.html";
+          textContent.formatted_body = formattedBody;
+          textContent["m.mentions"] = { user_ids: userIds };
+        }
+        const r = await intent.sendMessage(portal.room_id, textContent);
         eventId = r.event_id;
         break;
       }

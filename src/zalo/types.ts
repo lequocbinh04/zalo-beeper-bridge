@@ -29,6 +29,14 @@ export interface ZaloMessage {
   quotable?: ZaloQuotePayload;
   /** msgId of the message this one replies to (Zalo quote → Matrix reply) */
   replyToMsgId?: string;
+  /** @mentions in a group message (uid + position/length in the text) */
+  mentions?: ZaloMention[];
+}
+
+export interface ZaloMention {
+  uid: string;
+  pos: number;
+  len: number;
 }
 
 /** A contact reacted to a message. */
@@ -89,5 +97,6 @@ export interface RawZaloMessage {
     propertyExt?: unknown;
     ttl?: number;
     quote?: { globalMsgId?: string | number };
+    mentions?: Array<{ uid: string; pos: number; len: number }>;
   };
 }

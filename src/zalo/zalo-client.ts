@@ -7,7 +7,7 @@ import { loadCredentials, saveCredentials, clearCredentials } from "./credential
 import { normalizeZaloMessage } from "./event-normalizer.ts";
 import { ListenerManager } from "./listener-manager.ts";
 import { RateLimiter } from "./rate-limiter.ts";
-import type { RawZaloMessage, ZaloMessage, ZaloQuotePayload, ZaloReactionEvent, ZaloSeenEvent, ZaloThreadType, ZaloTypingEvent } from "./types.ts";
+import type { RawZaloMessage, ZaloMention, ZaloMessage, ZaloQuotePayload, ZaloReactionEvent, ZaloSeenEvent, ZaloThreadType, ZaloTypingEvent } from "./types.ts";
 
 export interface ZaloClientOptions {
   credsPath: string;
@@ -405,6 +405,7 @@ export class ZaloClient extends EventEmitter<ZaloClientEvents> {
     text: string,
     quote?: ZaloQuotePayload,
     onBeforeSend?: () => void,
+    mentions?: ZaloMention[],
   ): Promise<{ msgId: string | null }> {
     // Capture before the rate-limit wait — logout during the wait must not null-deref
     const api = this.api;
@@ -412,7 +413,11 @@ export class ZaloClient extends EventEmitter<ZaloClientEvents> {
     await this.rateLimiter.acquire();
     onBeforeSend?.();
     const zaloType = threadType === "group" ? ThreadType.Group : ThreadType.User;
-    const payload = quote ? { msg: text, quote: quote as never } : text;
+    // A quote and/or mentions require the object form of MessageContent
+    const payload =
+      quote || mentions?.length
+        ? { msg: text, ...(quote ? { quote: quote as never } : {}), ...(mentions?.length ? { mentions } : {}) }
+        : text;
     const result = await api.sendMessage(payload, threadId, zaloType);
     return { msgId: result.message?.msgId != null ? String(result.message.msgId) : null };
   }

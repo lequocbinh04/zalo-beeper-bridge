@@ -7,6 +7,7 @@ import { imageSize } from "image-size";
 import type { Bridge, WeakEvent } from "matrix-appservice-bridge";
 import type { EchoSuppressor } from "./echo-suppressor.ts";
 import { downloadMatrixMedia } from "./media-handler.ts";
+import { parseOutboundMentions } from "./mentions.ts";
 import type { MappingStore, PortalRow } from "./mapping-store.ts";
 import type { ZaloClient } from "../zalo/zalo-client.ts";
 
@@ -95,7 +96,8 @@ export class OutboundHandler {
       msgtype?: string;
       body?: string;
       url?: string;
-      "m.new_content"?: { body?: string };
+      formatted_body?: string;
+      "m.new_content"?: { body?: string; formatted_body?: string };
       "m.relates_to"?: { rel_type?: string; event_id?: string; "m.in_reply_to"?: { event_id?: string } };
     };
 
@@ -115,8 +117,9 @@ export class OutboundHandler {
     let body = content.body;
     let quote;
 
+    const isEdit = content["m.relates_to"]?.rel_type === "m.replace";
     // Matrix edits: Zalo has no edit API — send the corrected text as a fresh message
-    if (content["m.relates_to"]?.rel_type === "m.replace") {
+    if (isEdit) {
       body = content["m.new_content"]?.body ?? body.replace(/^\* /, "");
     }
 
@@ -134,20 +137,38 @@ export class OutboundHandler {
       }
     }
 
+    // @mentions: Matrix pills → Zalo mentions on the FINAL body (owner + ghost MXIDs → uids)
+    const formattedBody = isEdit ? content["m.new_content"]?.formatted_body : content.formatted_body;
+    const mentions = parseOutboundMentions(body, formattedBody, (mxid) => {
+      if (mxid === this.deps.ownerUserId) return this.deps.zalo.ownId;
+      const m = /^@sh-zalo_(.+):/.exec(mxid);
+      return m ? m[1]! : null;
+    });
+
     try {
       // expect() runs via onBeforeSend AFTER the rate-limit wait — the suppression
       // TTL must start at real send time or bursts outlive it (duplicate echoes)
       let result;
       try {
-        result = await this.deps.zalo.sendText(portal.thread_id, portal.thread_type, body, quote, () =>
-          this.deps.echo.expect(portal.thread_id, body),
+        result = await this.deps.zalo.sendText(
+          portal.thread_id,
+          portal.thread_type,
+          body,
+          quote,
+          () => this.deps.echo.expect(portal.thread_id, body),
+          mentions,
         );
       } catch (quoteErr) {
         if (!quote) throw quoteErr;
         // A stale/incompatible quote payload can be rejected — degrade to a plain send
         console.warn("[outbound] quoted send failed, retrying without quote:", (quoteErr as Error).message);
-        result = await this.deps.zalo.sendText(portal.thread_id, portal.thread_type, body, undefined, () =>
-          this.deps.echo.expect(portal.thread_id, body),
+        result = await this.deps.zalo.sendText(
+          portal.thread_id,
+          portal.thread_type,
+          body,
+          undefined,
+          () => this.deps.echo.expect(portal.thread_id, body),
+          mentions,
         );
       }
       console.log(`[out-send] evt=${event.event_id} msgId=${result.msgId} body=${JSON.stringify(body.slice(0, 40))}`);
