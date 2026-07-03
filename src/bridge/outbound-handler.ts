@@ -137,6 +137,7 @@ export class OutboundHandler {
           this.deps.echo.expect(portal.thread_id, body),
         );
       }
+      console.log(`[out-send] evt=${event.event_id} msgId=${result.msgId} body=${JSON.stringify(body.slice(0, 40))}`);
       if (result.msgId) this.deps.store.recordMessage(result.msgId, event.room_id, event.event_id ?? null, "outbound");
       else if (event.event_id) this.deps.store.markOutboundHandled(event.event_id, event.room_id);
     } catch (err) {
