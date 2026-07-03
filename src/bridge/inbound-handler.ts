@@ -4,6 +4,7 @@
 import type { Bridge } from "matrix-appservice-bridge";
 import type { EchoSuppressor } from "./echo-suppressor.ts";
 import { bridgeInboundPhoto, bridgeInboundSticker } from "./media-handler.ts";
+import { SELF_BRIDGE_MARKER } from "./outbound-handler.ts";
 import type { MappingStore } from "./mapping-store.ts";
 import type { PortalManager } from "./portal-manager.ts";
 import type { PuppetRegistry } from "./puppet-registry.ts";
@@ -89,30 +90,32 @@ export class InboundHandler {
 
     const intent = msg.isSelf ? this.intentForSelf() : await this.intentForSender(msg, portal.room_id);
 
-    // Zalo quote → Matrix reply: map the quoted msgId to its bridged Matrix event
-    let relatesTo: Record<string, unknown> | undefined;
+    // Extra content fields merged into every post. For our own (double-puppeted)
+    // messages this marks them so OutboundHandler never loops them back to Zalo.
+    // Zalo quote → Matrix reply: map the quoted msgId to its bridged Matrix event.
+    const extra: Record<string, unknown> = {};
+    if (msg.isSelf) extra[SELF_BRIDGE_MARKER] = true;
     if (msg.replyToMsgId) {
       const target = this.deps.store.getEventByZaloMsgId(msg.replyToMsgId);
-      if (target?.eventId) relatesTo = { "m.in_reply_to": { event_id: target.eventId } };
+      if (target?.eventId) extra["m.relates_to"] = { "m.in_reply_to": { event_id: target.eventId } };
     }
 
     let eventId: string | null = null;
     switch (msg.content.kind) {
       case "text": {
-        const content: Record<string, unknown> = { msgtype: "m.text", body: msg.content.text };
-        if (relatesTo) content["m.relates_to"] = relatesTo;
-        const r = await intent.sendMessage(portal.room_id, content);
+        const r = await intent.sendMessage(portal.room_id, { msgtype: "m.text", body: msg.content.text, ...extra });
         eventId = r.event_id;
         break;
       }
       case "photo": {
         try {
-          const r = await bridgeInboundPhoto(intent, portal.room_id, msg.content, this.deps.mediaMaxBytes, relatesTo);
+          const r = await bridgeInboundPhoto(intent, portal.room_id, msg.content, this.deps.mediaMaxBytes, extra);
           eventId = r.eventId;
         } catch (err) {
           const r = await intent.sendMessage(portal.room_id, {
             msgtype: "m.notice",
             body: `[Zalo photo could not be bridged: ${(err as Error).message}]`,
+            ...extra,
           });
           eventId = r.event_id;
         }
@@ -122,10 +125,10 @@ export class InboundHandler {
         try {
           const url = await this.deps.resolveStickerUrl(msg.content.id);
           if (!url) throw new Error("sticker image unavailable");
-          const r = await bridgeInboundSticker(intent, portal.room_id, msg.content.id, url, this.deps.mediaMaxBytes);
+          const r = await bridgeInboundSticker(intent, portal.room_id, msg.content.id, url, this.deps.mediaMaxBytes, extra);
           eventId = r.eventId;
         } catch {
-          const r = await intent.sendMessage(portal.room_id, { msgtype: "m.notice", body: "[Zalo sticker]" });
+          const r = await intent.sendMessage(portal.room_id, { msgtype: "m.notice", body: "[Zalo sticker]", ...extra });
           eventId = r.event_id;
         }
         break;
@@ -134,6 +137,7 @@ export class InboundHandler {
         const r = await intent.sendMessage(portal.room_id, {
           msgtype: "m.notice",
           body: `[Zalo message type not supported by bridge: ${msg.content.msgType}]`,
+          ...extra,
         });
         eventId = r.event_id;
         break;

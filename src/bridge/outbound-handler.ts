@@ -15,6 +15,15 @@ export function stripReplyFallback(body: string): string {
   return body.replace(/^(?:>.*\n)+\n?/, "");
 }
 
+/**
+ * Content marker on messages the bridge double-puppets as the owner (mirroring
+ * the owner's own Zalo-app messages into Beeper). The homeserver echoes these
+ * events back to the appservice, and the echo can beat the send-response's
+ * event_id — so id-based guards race. The marker travels IN the content, so
+ * OutboundHandler can drop it deterministically and never loop it back to Zalo.
+ */
+export const SELF_BRIDGE_MARKER = "com.zalo-bridge.self";
+
 const MIME_EXT: Record<string, string> = {
   "image/jpeg": "jpg", "image/png": "png", "image/gif": "gif", "image/webp": "webp",
   "video/mp4": "mp4", "audio/ogg": "ogg", "audio/mpeg": "mp3", "audio/mp4": "m4a", "audio/aac": "aac",
@@ -60,6 +69,10 @@ export class OutboundHandler {
     if (event.type === "m.reaction") return this.handleReaction(event, portal);
     if (event.type === "m.room.redaction") return this.handleRedaction(event, portal);
     if (event.type !== "m.room.message") return true;
+
+    // Deterministic anti-loop: the bridge marks messages it double-puppets as the
+    // owner (mirroring the owner's Zalo-app messages). Never send those back to Zalo.
+    if ((event.content as Record<string, unknown>)?.[SELF_BRIDGE_MARKER]) return true;
 
     // Only the owner's own messages bridge outbound; skip bridge-posted echoes
     if (event.sender !== this.deps.ownerUserId) return true;

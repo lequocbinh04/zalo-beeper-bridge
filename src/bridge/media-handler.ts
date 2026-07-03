@@ -96,6 +96,7 @@ export async function bridgeInboundSticker(
   stickerId: number,
   imageUrl: string,
   maxBytes: number,
+  extra?: Record<string, unknown>,
 ): Promise<MediaResult> {
   let cached = stickerMxcCache.get(stickerId);
   if (!cached) {
@@ -108,6 +109,7 @@ export async function bridgeInboundSticker(
     body: "sticker",
     url: cached.mxc,
     info: { mimetype: cached.mimetype, size: cached.size },
+    ...extra,
   });
   return { eventId: event_id };
 }
@@ -117,7 +119,7 @@ export async function bridgeInboundPhoto(
   roomId: string,
   photo: InboundPhoto,
   maxBytes: number,
-  relatesTo?: Record<string, unknown>,
+  extra?: Record<string, unknown>,
 ): Promise<MediaResult> {
   const { buffer, mimetype } = await fetchMediaCapped(photo.url, maxBytes);
   const ext = mimetype.split("/")[1]?.split(";")[0] ?? "jpg";
@@ -135,7 +137,7 @@ export async function bridgeInboundPhoto(
     },
   };
   if (photo.caption) content.filename = `zalo-photo.${ext}`;
-  if (relatesTo) content["m.relates_to"] = relatesTo;
+  Object.assign(content, extra);
   const { event_id } = await intent.sendMessage(roomId, content);
   return { eventId: event_id };
 }
