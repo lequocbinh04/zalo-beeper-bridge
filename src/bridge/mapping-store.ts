@@ -100,6 +100,14 @@ export class MappingStore {
     return this.db.prepare("SELECT 1 FROM message WHERE event_id = ?").get(eventId) !== undefined;
   }
 
+  /** Persist "this outbound Matrix event was handled" even when the Zalo send
+   * returned no msgId, so a redelivery after a restart is not sent again. */
+  markOutboundHandled(eventId: string, roomId: string): void {
+    this.db
+      .prepare("INSERT OR IGNORE INTO message (zalo_msg_id, room_id, event_id, direction, ts) VALUES (?, ?, ?, 'outbound', ?)")
+      .run(`evt:${eventId}`, roomId, eventId, Date.now());
+  }
+
   /** Matrix event for a Zalo msgId (read-receipt mapping). */
   getEventIdByMsgId(zaloMsgId: string): string | null {
     const row = this.db.prepare("SELECT event_id FROM message WHERE zalo_msg_id = ?").get(zaloMsgId) as

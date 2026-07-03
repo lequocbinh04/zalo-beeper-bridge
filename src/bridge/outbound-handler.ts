@@ -138,6 +138,7 @@ export class OutboundHandler {
         );
       }
       if (result.msgId) this.deps.store.recordMessage(result.msgId, event.room_id, event.event_id ?? null, "outbound");
+      else if (event.event_id) this.deps.store.markOutboundHandled(event.event_id, event.room_id);
     } catch (err) {
       this.deps.echo.cancel(portal.thread_id, body);
       await this.notice(event.room_id, `⚠ Failed to deliver to Zalo: ${(err as Error).message}`);
@@ -183,6 +184,7 @@ export class OutboundHandler {
       }
       // Record msgIds for echo dedup; first carries the Matrix event_id so redacting recalls it on Zalo
       msgIds.forEach((msgId, i) => this.deps.store.recordMessage(msgId, portal.room_id, i === 0 ? (event.event_id ?? null) : null, "outbound"));
+      if (msgIds.length === 0 && event.event_id) this.deps.store.markOutboundHandled(event.event_id, portal.room_id);
     } catch (err) {
       await this.notice(event.room_id!, `⚠ Failed to send ${msgtype.replace("m.", "")} to Zalo: ${(err as Error).message}`);
     }
