@@ -40,6 +40,16 @@ function normalizeContent(msgType: string, content: unknown): ZaloContent {
       return { kind: "sticker", id: sticker.id, catId: sticker.catId };
     }
   }
+  // Link/card types (chat.recommended, chat.link, chat.ecard, ...) carry an href +
+  // title/description — render as a readable text line instead of an "unsupported" notice.
+  if (typeof content === "object" && content !== null) {
+    const card = content as { href?: string; title?: string; description?: string };
+    if (card.href) {
+      const label = card.title || card.description || "";
+      const text = label && !label.includes(card.href) ? `${label}\n${card.href}` : card.href;
+      return { kind: "text", text };
+    }
+  }
   return { kind: "unsupported", msgType };
 }
 
