@@ -72,6 +72,10 @@ const branding = {
   stateKey: `${config.matrix.domain}/${bridgeAppId}`,
 };
 
+// Shared between in/out handlers: event_ids the bridge posted as the owner (own
+// phone messages) + events already sent outbound — prevents re-sending / loops.
+const bridgedEventIds = new Set<string>();
+
 const puppets = new PuppetRegistry(bridge, store, config.matrix.domain, (uid) => zalo.getUserProfile(uid));
 const portals = new PortalManager(bridge, store, puppets, config.matrix.owner, branding);
 const inbound = new InboundHandler({
@@ -84,6 +88,7 @@ const inbound = new InboundHandler({
   mediaMaxBytes: config.bridge.mediaMaxBytes,
   resolveGroupName: (threadId) => zalo.getGroupName(threadId),
   resolveStickerUrl: (stickerId) => zalo.getStickerImageUrl(stickerId),
+  bridgedEventIds,
 });
 
 const outbound = new OutboundHandler({
@@ -95,6 +100,7 @@ const outbound = new OutboundHandler({
   mediaMaxBytes: config.bridge.mediaMaxBytes,
   homeserverUrl: config.matrix.homeserverUrl,
   matrixToken: asToken,
+  bridgedEventIds,
 });
 const sync = new SyncManager({ zalo, portals, inbound });
 ctx.runSync = () => sync.run();

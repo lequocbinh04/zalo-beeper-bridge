@@ -38,6 +38,9 @@ export interface OutboundHandlerDeps {
   mediaMaxBytes: number;
   homeserverUrl: string;
   matrixToken: string;
+  /** event_ids the bridge must never send outbound: its own double-puppet posts
+   * (shared with InboundHandler) + events already handled here (retry idempotency). */
+  bridgedEventIds: Set<string>;
 }
 
 export class OutboundHandler {
@@ -60,6 +63,19 @@ export class OutboundHandler {
 
     // Only the owner's own messages bridge outbound; skip bridge-posted echoes
     if (event.sender !== this.deps.ownerUserId) return true;
+    // Idempotency + anti-loop: skip our own double-puppet posts (phone messages the
+    // bridge mirrored into Beeper) and any transaction retry of an event handled here.
+    // In-memory + synchronous, so it wins races the DB-backed hasEventId check can lose.
+    if (event.event_id) {
+      if (this.deps.bridgedEventIds.has(event.event_id)) return true;
+      this.deps.bridgedEventIds.add(event.event_id);
+      if (this.deps.bridgedEventIds.size > 5000) {
+        for (const id of this.deps.bridgedEventIds) {
+          this.deps.bridgedEventIds.delete(id);
+          if (this.deps.bridgedEventIds.size <= 4000) break;
+        }
+      }
+    }
     if (event.event_id && this.deps.store.hasEventId(event.event_id)) return true;
 
     const content = event.content as {

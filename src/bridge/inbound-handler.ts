@@ -19,6 +19,9 @@ export interface InboundHandlerDeps {
   mediaMaxBytes: number;
   resolveGroupName: (threadId: string) => Promise<string | null>;
   resolveStickerUrl: (stickerId: number) => Promise<string | null>;
+  /** shared with OutboundHandler: event_ids the bridge posted as the owner
+   * (own phone messages) so they are never sent back to Zalo (anti-loop). */
+  bridgedEventIds: Set<string>;
 }
 
 export class InboundHandler {
@@ -136,6 +139,9 @@ export class InboundHandler {
         break;
       }
     }
+    // Own phone messages are posted as the owner and will round-trip back to the
+    // appservice; mark the event so OutboundHandler never re-sends it to Zalo.
+    if (msg.isSelf && eventId) this.deps.bridgedEventIds.add(eventId);
     this.deps.store.recordMessage(
       msg.msgId,
       portal.room_id,
