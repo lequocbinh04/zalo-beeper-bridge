@@ -51,9 +51,11 @@ const bridge = createBridge(
     // Presence events carry no room_id and are ignored.
     if (event.type === "m.receipt") {
       if (store.isPortalRoom(event.room_id)) await presence.handleOwnerReceipt(event.room_id, event.content as Record<string, unknown>);
-    } else if (event.type === "m.typing") {
-      if (store.isPortalRoom(event.room_id)) await presence.handleOwnerTyping(event.room_id, event.content.user_ids ?? []);
     }
+    // Typing mirroring disabled on request — re-enable by uncommenting:
+    // else if (event.type === "m.typing") {
+    //   if (store.isPortalRoom(event.room_id)) await presence.handleOwnerTyping(event.room_id, event.content.user_ids ?? []);
+    // }
   },
 );
 ctx.bridge = bridge;
@@ -142,7 +144,8 @@ zalo.on("dead", (reason) => {
 zalo.on("message", (msg) => inbound.handle(msg));
 const presence = new PresenceHandler(store, puppets, zalo, config.matrix.owner, () => zalo.ownId);
 zalo.on("seen", (ev) => void presence.handleSeen(ev).catch((err) => console.warn("seen handling failed:", err)));
-zalo.on("typing", (ev) => void presence.handleTyping(ev).catch((err) => console.warn("typing handling failed:", err)));
+// Typing mirroring disabled on request — re-enable by uncommenting:
+// zalo.on("typing", (ev) => void presence.handleTyping(ev).catch((err) => console.warn("typing handling failed:", err)));
 zalo.on("reaction", (ev) => void presence.handleReaction(ev).catch((err) => console.warn("reaction handling failed:", err)));
 
 // Appservice MUST be up before the Zalo listener: intents throw pre-initialise,
