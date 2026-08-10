@@ -35,6 +35,11 @@ export type RemoteStateReporter = (state: RemoteState) => Promise<void>;
 /** Profile lookups go through zca-js and can hang; past this we publish with a plain label. */
 const PROFILE_LOOKUP_TIMEOUT_MS = 5_000;
 const AVATAR_MAX_BYTES = 5 * 1024 * 1024;
+// Beeper expires a remote state that goes unrefreshed for a few hours even while the Zalo
+// listener stays connected the whole time (confirmed empirically: one state_event transition
+// at startup, no further transitions for 3h+, remoteState came back empty on next check).
+// Re-post the last known state periodically so a long-idle connection doesn't go stale.
+const HEARTBEAT_MS = 10 * 60 * 1000;
 
 export interface ZaloStatePublisherDeps {
   homeserverUrl: string;
@@ -50,12 +55,18 @@ export interface ZaloStatePublisherDeps {
 }
 
 /**
- * Publishes the Zalo account's state to Beeper. Beeper records a state only when
- * `state_event` *changes*, so name and avatar must ride along with the transition itself —
- * a follow-up refresh carrying the same state is silently dropped.
+ * Publishes the Zalo account's state to Beeper, then keeps re-posting it on an interval so a
+ * long-idle connection (no further transitions) doesn't silently expire server-side. Beeper's
+ * display fields (name/avatar) only take effect on an actual `state_event` change, but the
+ * repost still resets the server's staleness clock — that's the point of the heartbeat.
  */
 export function createZaloStatePublisher(deps: ZaloStatePublisherDeps): (stateEvent: RemoteStateEvent) => Promise<void> {
   const report = createRemoteStateReporter(deps.homeserverUrl, deps.bridgeId, deps.asToken);
+  let lastState: RemoteState | null = null;
+
+  setInterval(() => {
+    if (lastState) void report(lastState);
+  }, HEARTBEAT_MS).unref();
 
   return async (stateEvent) => {
     const remoteId = deps.getOwnId();
@@ -64,12 +75,13 @@ export function createZaloStatePublisher(deps: ZaloStatePublisherDeps): (stateEv
     const profile = stateEvent === "CONNECTED" ? await withTimeout(deps.getOwnProfile(remoteId)) : null;
     const avatar = profile?.avatarUrl ? await deps.uploadAvatar(profile.avatarUrl).catch(warnAvatar) : undefined;
 
-    await report({
+    lastState = {
       state_event: stateEvent,
       remote_id: remoteId,
       remote_name: profile?.displayName ?? deps.fallbackName,
       ...(profile?.displayName ? { remote_profile: { name: profile.displayName, avatar } } : {}),
-    });
+    };
+    await report(lastState);
   };
 }
 
