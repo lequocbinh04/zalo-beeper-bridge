@@ -11,6 +11,8 @@ import { PresenceHandler } from "./bridge/presence-handler.ts";
 import { assertGhostNamespace, PuppetRegistry } from "./bridge/puppet-registry.ts";
 import { SyncManager } from "./bridge/sync-manager.ts";
 import { createBridge, startBridge } from "./matrix/appservice.ts";
+import { AVATAR_MAX_BYTES, createZaloStatePublisher } from "./matrix/beeper-bridge-state.ts";
+import { fetchMediaCapped } from "./bridge/media-handler.ts";
 import { handleBotEvent, type BotCommandContext } from "./matrix/bot-commands.ts";
 import { ensureNetworkIdentity } from "./matrix/network-branding.ts";
 import { ZaloClient } from "./zalo/zalo-client.ts";
@@ -111,9 +113,32 @@ const usersRegex = registration.namespaces?.users?.[0]?.regex;
 if (!usersRegex) throw new Error(`No user namespace in ${config.matrix.registrationPath}`);
 assertGhostNamespace(usersRegex, puppets.mxidFor("1234567890"));
 
-zalo.on("connected", () => console.log("[zalo] listener connected"));
-zalo.on("reconnecting", (attempt, delayMs) => console.warn(`[zalo] listener reconnecting (attempt ${attempt}, in ${delayMs}ms)`));
-zalo.on("dead", (reason) => console.error(`[zalo] listener DEAD: ${reason} — send 'login' in the management room`));
+// Beeper needs a remote-account state to show the network and its chats (see beeper-bridge-state.ts)
+const publishZaloState = createZaloStatePublisher({
+  homeserverUrl: config.matrix.homeserverUrl,
+  bridgeId: bridgeAppId,
+  asToken,
+  fallbackName: config.network.name,
+  getOwnId: () => zalo.ownId,
+  getOwnProfile: (uid) => zalo.getUserProfile(uid),
+  uploadAvatar: async (url) => {
+    const { buffer, mimetype } = await fetchMediaCapped(url, AVATAR_MAX_BYTES);
+    return bridge.getIntent().uploadContent(buffer, { type: mimetype, name: "zalo-avatar" });
+  },
+});
+
+zalo.on("connected", () => {
+  console.log("[zalo] listener connected");
+  void publishZaloState("CONNECTED");
+});
+zalo.on("reconnecting", (attempt, delayMs) => {
+  console.warn(`[zalo] listener reconnecting (attempt ${attempt}, in ${delayMs}ms)`);
+  void publishZaloState("TRANSIENT_DISCONNECT");
+});
+zalo.on("dead", (reason) => {
+  console.error(`[zalo] listener DEAD: ${reason} — send 'login' in the management room`);
+  void publishZaloState("BAD_CREDENTIALS");
+});
 zalo.on("message", (msg) => inbound.handle(msg));
 const presence = new PresenceHandler(store, puppets, zalo, config.matrix.owner, () => zalo.ownId);
 zalo.on("seen", (ev) => void presence.handleSeen(ev).catch((err) => console.warn("seen handling failed:", err)));
