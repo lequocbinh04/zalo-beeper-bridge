@@ -2,20 +2,9 @@
 
 The bridge is a single Node.js process written in TypeScript (run directly by Node 22.18+, no build step). It is a Matrix **application service**: Beeper's server sends it the events of its rooms, and it acts in Matrix as a bot, as one ghost per Zalo contact, and as you.
 
-```
-Zalo servers                              Zalo PC (+ .zl.zip backup)
-   │  zca-js: QR login, listener             │  CDP export / backup tools (scripts/zalo-pc)
-   ▼                                         ▼
-src/zalo/*        normalized events      src/tools/import-zalo-export.ts   history importer
-   ▼                                         │  src/bridge/history-import.ts  export row → event
-src/bridge/*      portals, ghosts, SQLite mapping store, echo suppression,
-                  inbound/outbound, presence, media-content (shared rendering),
-                  animated-sticker, mentions, sync
-   ▼
-src/matrix/*      matrix-appservice-bridge (Bridge + Intents), network branding, bot commands
-   ▼
-bbctl proxy  ──►  Beeper Matrix server  ──►  Beeper clients
-```
+[![Architecture overview: Zalo servers and the Zalo CDN talk to ZaloClient, which feeds the bridge core, the appservice and bbctl proxy inside one container, connected to Beeper. The history importer reads Zalo PC exports and writes to Beeper and bridge.db.](/images/architecture.svg)](/images/architecture.svg)
+
+_Click the diagram to open it at full size._
 
 `bbctl proxy` holds the websocket to Beeper and forwards appservice traffic to the bridge's local HTTP port, so the bridge needs no public address.
 
