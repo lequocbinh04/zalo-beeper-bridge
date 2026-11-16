@@ -8,3 +8,5 @@ data/
 *.db
 .claude/skills/
 .archify/
+docs/.vitepress/cache/
+docs/.vitepress/dist/

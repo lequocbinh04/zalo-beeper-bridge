@@ -12,6 +12,9 @@ This repository is a fork of
 
 ### Added
 
+- A documentation site in `docs/` (VitePress): guides, deployment, history import,
+  troubleshooting, FAQ, security and reference pages. Preview it with `npm run docs:dev`.
+  The README now has a Vietnamese version (`README.vi.md`).
 - "Delete for me" on another device (`chat.delete`) removes the message in Beeper too. The
   bridge redacts it as the room's creator, never as you, so it is never turned into a recall
   for everyone on Zalo.

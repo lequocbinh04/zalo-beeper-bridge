@@ -2,7 +2,7 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
   Beeper<->Zalo bridge appservice.
-  Install: copy to ~/Library/LaunchAgents/ and `launchctl load` it (see docs/deployment-guide.md).
+  Install: copy to ~/Library/LaunchAgents/ and `launchctl load` it (see docs/deployment/macos-launchd.md).
   Paths are absolute because launchd runs with a minimal environment.
 -->
 <plist version="1.0">
