@@ -1,4 +1,4 @@
-# Works with both `docker compose` and `podman compose` (see docs/container-deployment.md).
+# Works with both `docker compose` and `podman compose` (see docs/deployment/container.md).
 # Run exactly ONE instance per registration — a second bridge/proxy kicks the first.
 services:
   zalo-bridge:

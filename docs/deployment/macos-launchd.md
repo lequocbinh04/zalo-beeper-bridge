@@ -1,4 +1,4 @@
-# Deployment Guide — running the bridge 24/7 (macOS launchd)
+# macOS (launchd)
 
 The bridge runs as two launchd user agents so it starts on login, restarts on crash, and survives closing your terminal:
 
@@ -24,8 +24,6 @@ The bridge only works while the Mac is on and not asleep. Disable sleep when plu
 
 ```bash
 sudo pmset -c sleep 0        # never sleep on AC power
-# optional, also prevent display-off from sleeping the system:
-sudo pmset -c disablesleep 0
 ```
 
 ## Manage
@@ -35,8 +33,8 @@ sudo pmset -c disablesleep 0
 launchctl list | grep beeper-zalo
 
 # live logs
-tail -f logs/bridge.log
-tail -f logs/proxy.log
+tail -f ~/zalo-beeper-bridge/logs/bridge.log   # paths set in the plists
+tail -f ~/zalo-beeper-bridge/logs/proxy.log
 
 # restart after a code change / config edit
 launchctl kickstart -k gui/$(id -u)/dev.beeper-zalo.bridge
@@ -50,8 +48,8 @@ After editing a `.plist`, copy it to `~/Library/LaunchAgents/` again and `unload
 
 ## Bot commands (in the Beeper management chat)
 
-`ping` · `status` · `login` (QR) · `logout` · `sync` (pinned + top groups) · `accounts` (Zalo accounts seen by this bridge).
+`ping` · `status` · `login` (QR) · `logout` · `sync` (pinned chats + every group) · `accounts` (Zalo accounts seen by this bridge). See [Bot commands](../guide/bot-commands).
 
 ## Troubleshooting
 
-See `docs/troubleshooting-runbook.md`.
+See [Troubleshooting](../troubleshooting). For backups, upgrades and rollback, see [Operations](./operations): the same steps apply, but the database and session files live in the repository folder instead of a volume.

@@ -1,13 +1,38 @@
 # zalo-beeper-bridge
 
+**English** | [Tiếng Việt](README.vi.md)
+
 [![CI](https://github.com/lethucthanhtu/zalo-beeper-bridge/actions/workflows/ci.yml/badge.svg)](https://github.com/lethucthanhtu/zalo-beeper-bridge/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-A self-hosted [Matrix](https://matrix.org/) application service that bridges a personal **Zalo** account into **[Beeper](https://www.beeper.com/)** (or any Matrix homeserver). Built on Node.js + TypeScript, [`zca-js`](https://github.com/RFS-ADRENO/zca-js) (unofficial Zalo Web API) and [`matrix-appservice-bridge`](https://github.com/matrix-org/matrix-appservice-bridge), connected to Beeper through [`bbctl`](https://github.com/beeper/bridge-manager).
+A self-hosted [Matrix](https://matrix.org/) application service that bridges a personal **Zalo** account into **[Beeper](https://www.beeper.com/)**. It is written in Node.js and TypeScript and built on [zca-js](https://github.com/RFS-ADRENO/zca-js) (an unofficial Zalo Web API) and [matrix-appservice-bridge](https://github.com/matrix-org/matrix-appservice-bridge). It connects to Beeper through [bbctl](https://github.com/beeper/bridge-manager).
 
-It also ships a **history importer** that moves your full Zalo history (from Zalo PC and its encrypted `.zl.zip` backup) into Beeper with original timestamps, real media, replies and mentions — see [Importing Zalo history](#importing-zalo-history).
+It also ships a **history importer** that moves your full Zalo history from Zalo PC (and its encrypted `.zl.zip` backup) into Beeper, with the original timestamps, real media, replies and mentions.
 
-> **⚠️ Unofficial & at your own risk.** `zca-js` talks to Zalo Web by reverse engineering, which violates Zalo's ToS and **can get your account locked or banned**. There is no official personal-messaging API for Zalo. Use a dedicated/secondary account if you are not willing to risk your main one. This project is an enthusiast tool, not a supported product.
+> [!WARNING]
+> **Unofficial, use at your own risk.** zca-js talks to Zalo Web by reverse engineering. That is against Zalo's terms of service and **can get your account locked or banned**. Zalo has no official API for personal messaging. If you are not willing to risk your main account, use a secondary one. This is an enthusiast tool, not a supported product.
+
+## Documentation
+
+The full documentation is in [`docs/`](docs/index.md):
+
+| Topic                                                                                                                    | What you find there                                          |
+| ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------ |
+| [Getting started](docs/guide/getting-started.md)                                                                         | Install `bbctl`, register, configure, run and log in to Zalo |
+| [Features](docs/guide/features.md)                                                                                       | Everything bridged in each direction, and what is not        |
+| [Configuration](docs/guide/configuration.md)                                                                             | Every `config.yaml` option                                   |
+| [Bot commands](docs/guide/bot-commands.md)                                                                               | `login`, `status`, `sync`, `accounts` and the rest           |
+| [Container deployment](docs/deployment/container.md)                                                                     | Docker or Podman, the recommended way to run it 24/7         |
+| [macOS (launchd)](docs/deployment/macos-launchd.md)                                                                      | Running it as launchd agents                                 |
+| [Operations](docs/deployment/operations.md)                                                                              | Health, logs, upgrades, backups and rollback                 |
+| [History import](docs/history-import/index.md)                                                                           | Bringing old Zalo history into Beeper                        |
+| [Multiple accounts](docs/guide/multiple-accounts.md)                                                                     | A second Zalo account as a second bridge                     |
+| [Troubleshooting](docs/troubleshooting.md) · [FAQ](docs/faq.md)                                                          | Common problems and questions                                |
+| [Security & privacy](docs/security.md)                                                                                   | Account risk, secrets on disk and what leaves your machine   |
+| [Architecture](docs/reference/architecture.md) · [Database](docs/reference/database.md) · [Logs](docs/reference/logs.md) | How it is built                                              |
+| [Development](docs/contributing/development.md)                                                                          | Working on the code                                          |
+
+The docs are a [VitePress](https://vitepress.dev/) site: `npm run docs:dev` previews it locally.
 
 ## Features
 
@@ -34,148 +59,43 @@ It also ships a **history importer** that moves your full Zalo history (from Zal
 | Own messages sent from the phone   |                    ✅ (double-puppeted)                    |                    n/a                     |
 | End-to-end encrypted Zalo chats    |             notice only (cannot be decrypted)              |                     —                      |
 
-Live videos / files / voice / GIFs and link previews share their rendering with the history importer, where it was verified on real chats; for live messages they are covered by unit tests of the payload parsing. Locations and contact cards are parsed from captured live payloads; the `chat.webcontent` shape is not confirmed yet — unknown message types log their field **names** (never values) so they can be added.
+The bridge also does the following:
 
-Photos without a caption show no caption (the file name is never used as one), in both directions: a Beeper photo without a `filename` field (Beeper iOS) is sent to Zalo without a caption.
+- Gives every Zalo contact a ghost user with their real name and avatar.
+- Creates a room automatically for each chat on its first message.
+- Has a `sync` command that creates rooms for pinned chats and every group.
+- Catches up on missed messages after every reconnect.
+- Shows the network in Beeper as "Zalo", with its logo.
+- Rate-limits outbound messages.
+- Stores the Zalo session encrypted.
 
-A Beeper message with a link (and no reply or @mention) is sent with Zalo's link API, so Zalo shows its own preview card; when Zalo cannot parse the link it goes out as plain text. A Zalo link message shows in Beeper as the text the sender typed (e.g. a short `maps.app.goo.gl` link), with the page title, description and thumbnail Zalo resolved as the Beeper preview. Rich text (bold, colours, or text Zalo formats itself, e.g. with many @mentions) arrives as plain text with its mentions; the styling is dropped.
+**Not implemented:** syncing Zalo recalls and edits to Beeper, bridging end-to-end encrypted chats, and live backfill from Zalo's servers (Zalo Web serves nothing from before the login, so use the history importer). See [Features](docs/guide/features.md) for the details.
 
-Typing indicators and read receipts go to Zalo exactly when Beeper sends them: turn off typing notifications or read receipts in Beeper's settings and nothing is mirrored (Beeper then sends no typing events, and only private receipts, which the bridge ignores). A contact card shows the contact's QR code with name and phone; the `zalo.me/<phone>` link opens the Zalo app on a phone (no link when the contact hides the number — scan the QR instead).
+## Quick start (container)
 
-Plus: ghost users with real names + avatars, portal rooms auto-created on first message, a `sync` command for pinned conversations and groups, Zalo network branding (name + logo), listener auto-reconnect with ban-suspicion pause, conservative outbound rate limiting, encrypted credential storage at rest, and the [history importer](#importing-zalo-history).
-
-**Not implemented:** Zalo→Beeper recall & edit sync, E2EE bridging, live backfill of history from Zalo's servers (Zalo Web exposes none from before login — use the importer).
-
-## Requirements
-
-- macOS or Linux, or Windows with Docker/Podman (see [container deployment](docs/container-deployment.md))
-- Node.js 22.18+ (runs TypeScript natively — no build step); the container image ships Node 24
-- A Beeper account and [`bbctl`](https://github.com/beeper/bridge-manager)
-- `ffmpeg` and Python 3 (bbctl prerequisites)
-- A Zalo account you can log in to by scanning a QR code
-- For the history importer: Zalo PC (Windows/macOS desktop app), optionally a Zalo PC backup file; on Windows PowerShell 7 and Git for Windows (for the one-command import script)
-
-## Setup
-
-### 1. Install and register with Beeper
+Requirements: Docker or Podman, a Beeper account and [bbctl](https://github.com/beeper/bridge-manager). The [getting started guide](docs/guide/getting-started.md) has the full steps and the non-container setup (Node.js 22.18+).
 
 ```bash
-# Install bbctl (macOS arm64 shown; see releases for your platform)
-curl -sL -o ~/.local/bin/bbctl \
-  https://github.com/beeper/bridge-manager/releases/latest/download/bbctl-macos-arm64
-chmod +x ~/.local/bin/bbctl
+git clone https://github.com/lethucthanhtu/zalo-beeper-bridge.git
+cd zalo-beeper-bridge
 
-bbctl login                              # log in to your Beeper account
-bbctl register -o registration.yaml sh-zalo
-```
+bbctl login
+bbctl register -o registration.yaml sh-zalo     # then set url: http://localhost:29350 in it
+cp config.yaml.example config.yaml              # fill in the values bbctl printed
 
-Edit the generated `registration.yaml` and set the `url` field to the local port the bridge listens on:
-
-```yaml
-url: http://localhost:29350
-```
-
-### 2. Configure the bridge
-
-```bash
-npm install
-cp config.yaml.example config.yaml
-```
-
-Fill in `config.yaml` with the values printed by `bbctl register` (homeserver URL, domain, your Beeper Matrix ID):
-
-```yaml
-matrix:
-  homeserverUrl: https://matrix.beeper.com/_hungryserv/<your-beeper-username>
-  domain: beeper.local
-  registrationPath: registration.yaml
-  port: 29350
-  owner: '@<your-beeper-username>:beeper.com'
-zalo:
-  credsPath: zalo-creds.session.json # encrypted at rest; never commit
-  messagesPerMinute: 8 # conservative pacing to protect the account
-bridge:
-  dbPath: bridge.db
-  mediaMaxBytes: 10485760 # photos / stickers / previews; videos & files allow up to 100 MB
-logging:
-  level: warn # matrix-appservice-bridge's log level; info also logs every HTTP request
-```
-
-### 3. Run
-
-Run the bridge and the bbctl proxy side by side (two terminals, or a process manager):
-
-```bash
-npm run dev                               # the appservice on localhost:29350
-bbctl proxy -r registration.yaml          # proxies Beeper <-> the bridge over a websocket
-```
-
-### Or: run it in a container (Docker / Podman)
-
-`compose.yaml` runs the bridge **and** `bbctl proxy` in one container — see [docs/container-deployment.md](docs/container-deployment.md):
-
-```bash
 mkdir container-config && cp config.yaml registration.yaml container-config/
 cp ~/.config/bbctl/config.json container-config/bbctl-config.json
-docker compose up -d --build        # or: podman compose up -d --build
+podman compose up -d --build                    # or: docker compose up -d --build
 ```
 
-The bridge's state (`bridge.db`, the encrypted Zalo session) lives on the `zalo-data` named volume (`/data` in the container). Rebuilding/recreating the container keeps it.
+In Beeper, open a chat with `@sh-zalobot:beeper.local`, send `login` and scan the QR code with the Zalo app on your phone. Then send `sync` to create rooms for your pinned chats and groups.
 
-### 4. Log in to Zalo
-
-In Beeper, open a chat with the bridge bot `@sh-zalobot:beeper.local` and send:
-
-```
-login
-```
-
-Scan the QR image it posts with the Zalo app on your phone and confirm. Once you see the listener connect, message the account from another Zalo user and the chat appears in Beeper.
-
-### Multiple Zalo accounts
-
-One bridge bridges one Zalo account. For a second account, run a **second bridge** next to the first (single-bridge multi-login is in preparation):
-
-1. Register it under another name — the ghost users, the bot and the namespace follow the name (`sh-zalo2` → bot `@sh-zalo2bot`, ghosts `@sh-zalo2_<uid>`), and the bridge picks them up from the registration automatically:
-   ```bash
-   bbctl register -o registration.yaml sh-zalo2
-   ```
-2. Give it its own config dir (`container-config-2/` with that `registration.yaml`, a `config.yaml` and `bbctl-config.json`) and its own data volume — add a second service to `compose.yaml`:
-   ```yaml
-   zalo-bridge-2:
-     image: localhost/zalo-beeper-bridge:latest
-     container_name: zalo-beeper-bridge-2
-     restart: unless-stopped
-     init: false
-     volumes:
-       - ./container-config-2:/config:ro
-       - zalo-data-2:/data
-   # and under volumes:  zalo-data-2:
-   ```
-3. `podman compose up -d`, then send `login` to `@sh-zalo2bot:beeper.local`.
-
-Beeper shows it as a separate network; a contact you know from both accounts gets one ghost per bridge. Never run two bridges with the **same** registration (Beeper disconnects the first one). Not yet verified end-to-end with two live accounts.
-
-> **Single-listener constraint:** Zalo Web allows only one active session. If you open Zalo Web in a browser while the bridge runs, the bridge listener is kicked. Use the phone app (and Zalo PC) alongside the bridge, not Zalo Web.
-
-## Bot commands
-
-Send these to the bridge bot in its management chat (owner only):
-
-| Command    | Action                                                                                                                           |
-| ---------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `ping`     | health check (`pong` + uptime)                                                                                                   |
-| `login`    | start QR login to Zalo                                                                                                           |
-| `logout`   | log out and clear saved credentials                                                                                              |
-| `status`   | login state, listener state, uptime                                                                                              |
-| `sync`     | create rooms for pinned chats + every group, fill empty rooms with the history Zalo allows this session (none from before login) |
-| `accounts` | the Zalo accounts this bridge has logged in to, and which one is logged in now (read-only)                                       |
+> [!IMPORTANT]
+> Zalo allows only one web session. Do not open Zalo Web in a browser while the bridge runs, or the two keep disconnecting each other. The phone app and Zalo PC are fine to use.
 
 ## Importing Zalo history
 
-Zalo Web (and therefore the live bridge) cannot fetch messages from before the session started. The history importer fills Beeper from **Zalo PC's local message store** instead, optionally enriched with media from a **Zalo PC backup** (`.zl.zip`). Each chat is rebuilt as a new Beeper room with the complete history in order; the bridge is then pointed at the new room and the old one is deleted — only after the new room has been verified.
-
-### Quick start (one command)
+Zalo Web gives the bridge nothing from before the login. The importer reads your history from Zalo PC instead, and optionally the media from a Zalo PC backup. It then rebuilds each chat in Beeper with the original timestamps and verifies the result before it deletes the old room. With the bridge container running:
 
 ```powershell
 # Windows (PowerShell 7 + Git for Windows)
@@ -187,204 +107,25 @@ pwsh scripts/zalo-pc/import.ps1
 scripts/zalo-pc/import.sh
 ```
 
-Both scripts:
-
-1. check the bridge container, Beeper, `node` (and Git Bash on Windows);
-2. (re)start Zalo PC with the local debug port — they **ask before closing** a running Zalo PC;
-3. list your chats **by name** (pinned first, then by message count) and let you pick them: `1,3,5-8`, `groups`, `dms` or `all`;
-4. run [Step 3](#step-3--export-and-import) chat by chat with live progress, then print an OK / FAIL summary.
-
-Re-running skips chats already done. Exports, `run.log` and `done.txt` land in `work/` (gitignored — it holds your messages).
-
-| Option                   | Windows (`import.ps1`)                | macOS (`import.sh`)     |
-| ------------------------ | ------------------------------------- | ----------------------- |
-| Chats, no picker         | `-Chats g123,4567`                    | `-c g123,4567`          |
-| Backup media (Step 2)    | `-MediaDir /data/import-media`        | `-m /data/import-media` |
-| Your Zalo uid            | `-OwnUid <uid>` (default: bridge log) | `-u <uid>`              |
-| Container name           | `-Container <name>`                   | `-n <name>`             |
-| Docker instead of Podman | `-ContainerCli docker`                | `-r docker`             |
-| Work dir                 | `-WorkDir <dir>`                      | `-w <dir>`              |
-
-On macOS, set `ZALO_APP=/path/to/Zalo.app` if Zalo PC is not in `/Applications`. Start with one chat (`-Chats` / `-c`) to check that everything works before importing all. The sections below describe what the scripts automate.
-
-### What gets imported, and how it looks
-
-Imported messages are rendered exactly like live ones (`src/bridge/media-content.ts` is shared):
-
-| Zalo message                                          | In Beeper                                                            |
-| ----------------------------------------------------- | -------------------------------------------------------------------- |
-| Text, rich text                                       | `m.text`, @mentions as pills, Zalo quotes as real Matrix replies     |
-| Photo                                                 | `m.image` (JPEG XL photos are converted to JPEG)                     |
-| Sticker                                               | animated WebP `m.sticker` (still PNG for single-frame stickers)      |
-| GIF                                                   | `m.image` `image/gif`                                                |
-| Video / file / voice                                  | `m.video` / `m.file` / `m.audio` voice note                          |
-| Link card                                             | text + `com.beeper.linkpreviews` (title, description, thumbnail)     |
-| Location, call log, system rows (pins, joins, polls…) | readable text / notice                                               |
-| Media whose bytes no longer exist anywhere            | a text line, e.g. `📷 [Ảnh 1920×1080 — không còn trên máy chủ Zalo]` |
-
-Where media comes from, in order: the backup copy (if prepared), then the Zalo CDN. **Zalo CDN links for photos, videos, files and voice expire about 14 days after sending**; Zalo Cloud (`zpcloud`/`zfcloud`), GIF and sticker hosts are permanent. Old media therefore only survives through the backup, which holds the media Zalo PC had downloaded.
-
-Other behaviour worth knowing:
-
-- **Duplicates removed:** Zalo PC keeps a second local row (`msgId_NNN`, same `cliMsgId` + type) for some of your own messages; those shadow copies are dropped. `_NNN` rows without a real twin are kept — they are the only copy.
-- **Nothing live is lost:** messages the live bridge delivered that Zalo PC never stored, or that arrive while a chat is being rebuilt, are replayed from the old room's Matrix events at their original position before the switch.
-- **Silent:** `send_notification:false`, marked read for you, and marked so the live bridge never sends imported messages back to Zalo.
-- **Message mappings kept:** replies, reactions, recall and read receipts keep working on imported messages.
-
-### Step 1 — Run Zalo PC with a local debug port
-
-The tools read Zalo PC's own (already decrypted) data over the Chrome DevTools Protocol on `127.0.0.1` only. Quit Zalo PC completely, then start it with:
-
-```powershell
-# Windows
-& "$env:LOCALAPPDATA\Programs\Zalo\Zalo-<version>\Zalo.exe" --remote-debugging-port=9229
-```
-
-```bash
-# macOS
-open -a Zalo --args --remote-debugging-port=9229
-```
-
-Only what Zalo PC holds locally can be imported: the more history Zalo PC has, the more ends up in Beeper.
-
-### Step 2 — (optional) Prepare media from a Zalo PC backup
-
-Create the backup in Zalo PC: **Cài đặt → Sao lưu & đồng bộ → Xuất dữ liệu** (Settings → Backup & sync → Export data). It produces `backup_zalo_<date>.zl.zip`, a tar stream encrypted with AES-256-CBC: key = SHA-256 of the session UIN (the login `dkey`), IV = `"zie"` + the first 13 characters of the UIN. The UIN is only available from the running, logged-in Zalo PC that made the backup.
-
-```bash
-npm install                                    # dev dependencies (@jsquash JXL/JPEG codecs)
-
-# 1. read the backup key (SECRET — anyone holding it can decrypt your backups)
-node scripts/zalo-pc/get-uin.mjs > ~/zalo-uin.txt
-
-# 2. check the key, then extract database + media (the backup file is only read)
-node scripts/zalo-pc/backup-extract.mjs backup_zalo_22_10_2026.zl.zip ~/zalo-uin.txt work/backup --peek
-node scripts/zalo-pc/backup-extract.mjs backup_zalo_22_10_2026.zl.zip ~/zalo-uin.txt work/backup --all
-rm ~/zalo-uin.txt
-
-# 3. map media files to messages, decode obfuscated files, convert JPEG XL → JPEG
-node scripts/zalo-pc/backup-media.mjs work/backup/<yourZaloUid>/ZaloDownloads <yourZaloUid> work/media
-```
-
-`<yourZaloUid>` is the top-level folder inside the extracted backup. `backup-media.mjs` writes `work/media/<msgId>.<ext>` and `work/media/media-index.json`; files that are not readable (e.g. Intune-encrypted attachments) are skipped and fall back to text. Copy the folder into the container:
-
-```bash
-tar -C work/media -cf - . | podman exec -i zalo-beeper-bridge sh -c 'mkdir -p /data/import-media && tar -C /data/import-media -xf - && chown -R node:node /data/import-media'
-```
-
-The backup's message database (`*_zmessage.zdb`) is plain NDJSON of the same rows Zalo PC holds, so it adds no extra history if Zalo PC is the machine that made it.
-
-### Step 3 — Export and import
-
-`scripts/zalo-pc/migrate-all.sh` does everything chat by chat: a fresh export of the chat from Zalo PC, then `--rebuild --remove-old` inside the container. It waits while Beeper or Zalo PC is unreachable, records `OK <key>` / `FAIL <key>` in `<workDir>/done.txt` and skips chats already OK on a re-run — failed chats keep their old room and can simply be re-run.
-
-```bash
-# order: one thread key per line — "g<groupId>" for groups, the peer uid for DMs.
-# Get every key with an export first:
-node scripts/zalo-pc/export-cdp.mjs work/export
-ls work/export/*.ndjson | xargs -n1 basename | sed 's/\.ndjson$//' > work/order.txt   # reorder as you like
-
-scripts/zalo-pc/migrate-all.sh work work/order.txt <yourZaloUid> /data/import-media
-tail -f work/run.log
-```
-
-The script runs the importer baked into the image (`/app/src/tools/import-zalo-export.ts`) — rebuild the image after updating the code.
-
-### The importer CLI
-
-`src/tools/import-zalo-export.ts` runs next to the live bridge (same config, registration and `bridge.db`); it only initialises appservice intents, never listens, and makes no Zalo API calls. Run it inside the container from `/data`:
-
-```bash
-podman exec -u node -w /data zalo-beeper-bridge node /app/src/tools/import-zalo-export.ts <exportDir> [options]
-```
-
-| Option                       | Meaning                                                                                                                      |
-| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `--only k1,k2`               | limit to these thread keys (required for `--rebuild`)                                                                        |
-| `--dry-run [--probe]`        | print per-chat counts by kind; `--probe` actually tries every download (no upload)                                           |
-| `--rebuild`                  | new room per chat with the full ordered history, live-only messages carried over, then repoint the thread                    |
-| `--remove-old`               | with `--rebuild`: verify the new room, then delete the superseded room                                                       |
-| `--carry-from !r1,!r2`       | with `--rebuild`: also keep live-only messages from these earlier rooms of the thread                                        |
-| `--verify`                   | read-only: every export message is mapped to the chat's room and every mapped message is a real event in its Beeper timeline |
-| `--retire !old1,!old2`       | verify one `--only` chat, then delete these superseded rooms                                                                 |
-| `--media-dir DIR`            | backup media prepared by `backup-media.mjs`                                                                                  |
-| `--own-uid UID`              | your Zalo uid (mentions of you become pills for your account)                                                                |
-| `--batch N` / `--delay-ms N` | batch size (100) and pause between batches (1500 ms)                                                                         |
-| `--media-days N`             | try expiring CDN links only for messages younger than N days (16)                                                            |
-
-Without `--rebuild` the importer runs in **prepend** mode: it only adds history older than the room's first bridged message (Beeper's batch-send API can only insert before the oldest or after the newest event — never in the middle), so use `--rebuild` whenever messages are missing between ones already in Beeper.
-
-### History import troubleshooting
-
-- **`Zalo main window not found`** — Zalo PC is not running with `--remote-debugging-port=9229`, or it is still starting.
-- **`bad tar header — wrong UIN`** — the key does not belong to this backup: read it from the Zalo PC session/account that created the backup.
-- **A chat ends `FAIL`** — its old room is untouched and any half-built room is deleted automatically; look at `run.log` and re-run the script (it skips chats already OK).
-- **`WARNING … live message(s) could not be carried over`** — a live-only message's Matrix event could not be read; the old room is then not removed.
-- **Photos / videos as text lines** — the CDN copy expired and the backup has no copy; nothing else holds the bytes.
-
-## Architecture
-
-```
-Zalo servers                              Zalo PC (+ .zl.zip backup)
-   │  zca-js: QR login, listener             │  CDP export / backup tools (scripts/zalo-pc)
-   ▼                                         ▼
-src/zalo/*        normalized events      src/tools/import-zalo-export.ts   history importer
-   ▼                                         │  src/bridge/history-import.ts  export row → event
-src/bridge/*      portals, ghosts, SQLite mapping store, echo suppression,
-                  inbound/outbound, presence, media-content (shared rendering),
-                  animated-sticker, mentions, sync
-   ▼
-src/matrix/*      matrix-appservice-bridge (Bridge + Intents), network branding, bot commands
-   ▼
-bbctl proxy  ──►  Beeper Matrix server  ──►  Beeper clients
-```
-
-- **Mapping store** (`better-sqlite3`): portals, puppets, and messages keyed by Zalo `msgId` → Matrix event, with `cliMsgId` / quote / direction / sender for reactions, recall and receipts. Schema v7 adds an `account` table and an `account_id` on every portal and message (filled on login) — groundwork for one bridge serving several Zalo accounts; portals also carry it as `fi.mau.receiver` in their `m.bridge` state, like mautrix bridgev2.
-- **Shared media rendering** (`src/bridge/media-content.ts`): one code path builds `m.image` / `m.video` / `m.file` / `m.audio` / `m.sticker` events and link previews for both live messages and the importer.
-- **Animated stickers** (`src/bridge/animated-sticker.ts`): Zalo returns no animated sticker URL for classic stickers; like Zalo PC, the bridge steps through the public sprite strip and encodes a looping WebP (libwebp via `wasm-webp`), with frame timing from `assets/zalo-sticker-timing.json`.
-- **Echo suppression:** outbound sends are matched against their own `selfListen` echo (by `msgId`, with a content/URL fallback) so the bridge never re-posts what you just sent.
-- **Beeper account state** (`src/matrix/beeper-bridge-state.ts`): Beeper lists a bridge's chats only while its remote-account state is published. The bridge posts it on every listener transition (`CONNECTED`, `TRANSIENT_DISCONNECT`, `BAD_CREDENTIALS` when the session dies, `LOGGED_OUT` on `logout`) and re-posts it every minute, because a `bbctl proxy` (re)connect can wipe it — with the old 10-minute re-post Beeper Desktop showed the network with no chats for up to 10 minutes after a restart. `bbctl whoami --raw` shows it under `remoteState`.
-- **Network branding** (`src/matrix/network-branding.ts`): the bot profile (`com.beeper.bridge.*`) and each portal's `m.bridge` / `uk.half-shot.bridge` state (keyed `<domain>/<registration id>`, with `com.beeper.room_type.v2` and `fi.mau.receiver`) give Beeper the network name "Zalo" and file the chats under it. The small network badge on chat avatars is drawn by Beeper's apps for bridge types they know; self-hosted bridges register as the generic type `bridgev2`, so the badge stays generic (a self-hosted mautrix Teams bridge shows the same).
-- **Provisioning probe:** hungryserv asks a self-hosted bridge for `/_matrix/provision/v3/capabilities` on each proxy connect (`bbctl proxy` forwards every proxied request as `PUT`). The bridge answers "no start-chat / group-creation features"; any other proxied path is logged as `[appservice] unhandled …`.
-- **Double-puppeting:** on Beeper's single-tenant hungryserv the appservice token can act as the owner, so messages you send from the Zalo phone app appear in Beeper on the right-hand side.
+See [History import](docs/history-import/index.md) for what gets imported, the manual steps and the importer CLI.
 
 ## Development
 
 ```bash
-npm run typecheck     # tsc strict (+ noUncheckedIndexedAccess, noUnused*, noImplicitReturns/Override), no emit
-npm run lint          # eslint flat config, type-aware: no floating or misused promises
-npm test              # vitest
+npm ci
+npm run typecheck && npm run lint && npm test
 ```
 
-Source lives under `src/` (ESM TypeScript run directly by Node 22+). All `zca-js` runtime usage is confined to `src/zalo/zalo-client.ts` so upstream breakage is contained to one module. History-import tooling that runs on the desktop (not in the container) lives in `scripts/zalo-pc/`.
-
-On Windows, regenerate `package-lock.json` on Linux after changing dependencies (`npm install` on Windows drops the Linux-only optional entries and the image's `npm ci` then fails):
-
-```bash
-podman run --rm -v "$PWD:/w" -w /w docker.io/library/node:24-bookworm-slim npm install --package-lock-only --ignore-scripts
-```
-
-## Security & privacy
-
-- Zalo session credentials are stored **AES-256-GCM encrypted** at rest (`src/zalo/credential-store.ts`), with the key in a sibling `0600` file. Never commit `zalo-creds.*`, `config.yaml`, `registration.yaml`, or `bridge.db` — they are gitignored.
-- The bridge runs entirely on your machine; message content is only ever sent to Beeper (your homeserver) and Zalo.
-- Media is only downloaded over https from Zalo's CDN hosts (`zdn.vn`, `zadn.vn`, and the video/file CDNs `dlmd.me`/`mdchat.me`, `dlfl.vn`/`flchat.vn`), re-checked on every redirect hop. Logs carry ids and hosts only — never message content or signed media links.
-- Outbound traffic is rate-limited and the listener pauses on ban-suspicion signals to reduce risk to the account.
-- `npm audit` (2026-10-28, matrix-appservice-bridge 12.0.1): 6 findings remain, all unreachable from this bridge and without an upstream fix — `ip-address` via `ip-cidr` is only used by matrix-appservice-bridge's provisioning API (not enabled here), and `deepmerge` via `html-to-text` only by matrix-bot-sdk's `sendHtmlText`/`replyHtmlText` (not called). Re-check after upgrading either package.
-- **History import:** the Zalo PC debug port listens on `127.0.0.1` only, but any local program can read your messages through it while it is open — restart Zalo PC normally when done. The backup key (`get-uin.mjs`) decrypts every backup of the account: keep it in a private file and delete it after use. Extracted backups and prepared media contain your full history and media in clear text — delete `work/` (and `/data/import-*` in the container) after importing.
+See [Development](docs/contributing/development.md) and [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Contributing
 
-Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) (setup, conventions and the
-privacy rules for fixtures and logs) and the [code of conduct](CODE_OF_CONDUCT.md). Report
-security problems privately as described in [SECURITY.md](SECURITY.md). Changes are listed in
-[CHANGELOG.md](CHANGELOG.md).
+Contributions are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md), which covers setup, conventions and the privacy rules for fixtures and logs, and the [code of conduct](CODE_OF_CONDUCT.md). Report security problems privately as described in [SECURITY.md](SECURITY.md). Changes are listed in [CHANGELOG.md](CHANGELOG.md).
 
 ## Acknowledgements
 
-- [lequocbinh04/zalo-beeper-bridge](https://github.com/lequocbinh04/zalo-beeper-bridge) — the original project this repository is forked from
-
-- [zca-js](https://github.com/RFS-ADRENO/zca-js) — the unofficial Zalo Web API this bridge is built on
+- [lequocbinh04/zalo-beeper-bridge](https://github.com/lequocbinh04/zalo-beeper-bridge): the original project this repository is forked from
+- [zca-js](https://github.com/RFS-ADRENO/zca-js): the unofficial Zalo Web API this bridge is built on
 - [matrix-appservice-bridge](https://github.com/matrix-org/matrix-appservice-bridge)
 - [Beeper Bridge Manager](https://github.com/beeper/bridge-manager)
 - [jSquash](https://github.com/jamsinclair/jSquash) (JPEG XL / JPEG codecs) and [wasm-webp](https://github.com/nieyuyao/webp-wasm) (animated WebP)
@@ -392,4 +133,4 @@ security problems privately as described in [SECURITY.md](SECURITY.md). Changes 
 
 ## License
 
-MIT — see [LICENSE](./LICENSE). Not affiliated with Zalo/VNG or Beeper.
+MIT, see [LICENSE](./LICENSE). Not affiliated with Zalo/VNG or Beeper.

@@ -36,7 +36,7 @@ npm run format      # prettier --write .
 ```
 
 All four must pass before a PR; CI runs the same commands. For a live test, run the bridge in
-a container (`docs/container-deployment.md`) or with `npm run dev` plus `bbctl proxy`.
+a container (`docs/deployment/container.md`) or with `npm run dev` plus `bbctl proxy`.
 
 On Windows, regenerate `package-lock.json` in a Linux container after changing dependencies
 (`npm install` on Windows drops Linux-only optional entries and the image build fails):
@@ -53,7 +53,7 @@ podman run --rm -v "$PWD:/w" -w /w docker.io/library/node:24-bookworm-slim npm i
 | `src/bridge/`                    | Portals, ghosts, SQLite mapping store, inbound (Zalo → Matrix) and outbound (Matrix → Zalo) handlers, media, sync and catch-up                                  |
 | `src/matrix/`                    | Appservice wiring, network branding, Beeper account state, bot commands                                                                                         |
 | `src/tools/`, `scripts/zalo-pc/` | History importer and the desktop export/backup tools                                                                                                            |
-| `docs/`                          | Deployment, container and troubleshooting guides                                                                                                                |
+| `docs/`                          | The documentation site (VitePress): guides, deployment, history import, reference, troubleshooting                                                              |
 
 New Zalo message types usually need only a case in `normalizeContent`
 (`src/zalo/event-normalizer.ts`) and a test with an anonymized fixture.
@@ -84,7 +84,7 @@ New Zalo message types usually need only a case in `normalizeContent`
 
 Database changes need a migration in `MappingStore.migrate()` and a note on rollback: an
 additive migration lets older code keep running; a non-additive one needs a backup restore
-(see the runbook, "Rolling back a deploy").
+(see "Rollback" in `docs/deployment/operations.md`).
 
 ## Releases
 

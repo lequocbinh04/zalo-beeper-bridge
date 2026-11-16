@@ -34,3 +34,7 @@ graphify-out/
 work/
 # second bridge config dirs (see README "Multiple Zalo accounts")
 container-config-*/
+
+# docs site build output
+docs/.vitepress/cache/
+docs/.vitepress/dist/

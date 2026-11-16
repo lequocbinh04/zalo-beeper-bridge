@@ -1,4 +1,4 @@
-# Container deployment — Docker or Podman
+# Container deployment (Docker or Podman)
 
 One image runs **both** processes the bridge needs: the appservice (`node src/index.ts`)
 and `bbctl proxy`. They share the container's loopback, so `registration.yaml` keeps
@@ -7,7 +7,7 @@ and `bbctl proxy`. They share the container's loopback, so `registration.yaml` k
 > Run exactly **one** instance per registration. A second bridge/proxy (another
 > container, `npm run dev`, a launchd agent, `bbctl proxy` in WSL…) kicks the first.
 
-## 1. Inputs (`container-config/`, gitignored)
+## 1. Inputs (`container-config/`, gitignored) {#_1-inputs-container-config-gitignored}
 
 | File                             | Where it comes from                                                                      |
 | -------------------------------- | ---------------------------------------------------------------------------------------- |
@@ -85,12 +85,14 @@ re-login silently (`[zalo] re-logged in from saved credentials`).
 
 ## Troubleshooting
 
-| Symptom                                                      | Check                                                                                         |
-| ------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
-| Chats missing in Beeper although the log shows `[zalo] in …` | You were left at "invite" (old versions). Restart: startup joins you into every portal        |
-| No `[zalo] in/own …` lines at all                            | Close Zalo Web/PC tabs (one web session only), then `logout` + `login`                        |
-| Unknown protocol frames                                      | `ZALO_WS_TRACE=1 podman compose up -d` logs every frame header (cmd/size only, never content) |
-| Network visible in Beeper Desktop, but no chats              | Remote-account state missing — runbook, "Beeper Desktop shows the Zalo network but no chats"  |
+The full list is on the [Troubleshooting](../troubleshooting) page.
+
+| Symptom                                                      | Check                                                                                                                      |
+| ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
+| Chats missing in Beeper although the log shows `[zalo] in …` | You were left at "invite" (old versions). Restart: startup joins you into every portal                                     |
+| No `[zalo] in/own …` lines at all                            | Close Zalo Web in the browser (one web session only), then `logout` + `login`                                              |
+| Unknown protocol frames                                      | `ZALO_WS_TRACE=1 podman compose up -d` logs every frame header (cmd/size only, never content)                              |
+| Network visible in Beeper Desktop, but no chats              | Remote-account state missing, see [Troubleshooting](../troubleshooting#beeper-desktop-shows-the-zalo-network-but-no-chats) |
 
 Each bridged Zalo message logs one line with ids only: `[zalo] in group text thread=… msg=…`.
 End-to-end-encrypted 1-1 pushes (cmd 551, dropped by zca-js) are rerouted to the DM handler.
@@ -101,15 +103,12 @@ Everything stateful is in the named volume (`/data`): `bridge.db` (portal/messag
 mapping), `zalo-creds.session.json` + its key, and the bbctl login. A named volume is
 used on purpose: SQLite WAL is unreliable on Windows bind mounts.
 
-```bash
-docker run --rm -v zalo-beeper-bridge_zalo-data:/data -v "$PWD":/backup busybox \
-  tar czf /backup/zalo-data.tgz -C /data .
-```
+See [Operations](./operations#backup) for backups, upgrades and rollback.
 
 ## History import and a second account
 
-- Import history with `scripts/zalo-pc/import.ps1` (Windows) or `scripts/zalo-pc/import.sh` (macOS) — see the README section "Importing Zalo history". They run the importer inside this container (`-ContainerCli docker` / `-r docker` for Docker, `-Container` / `-n` for another container name).
-- A second Zalo account runs as a second bridge with its own `bbctl register` name, config dir and volume — see the README section "Multiple Zalo accounts".
+- Import history with `scripts/zalo-pc/import.ps1` (Windows) or `scripts/zalo-pc/import.sh` (macOS) (see [History import](../history-import/)). They run the importer inside this container (`-ContainerCli docker` / `-r docker` for Docker, `-Container` / `-n` for another container name).
+- A second Zalo account runs as a second bridge with its own `bbctl register` name, config dir and volume (see [Multiple accounts](../guide/multiple-accounts)).
 
 ## Limits
 
