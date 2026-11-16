@@ -39,6 +39,10 @@ This repository is a fork of
 
 ### Fixed
 
+- The Zalo listener no longer gives up after a long network outage (PC asleep, Wi-Fi or DNS
+  down for more than ~30 minutes). Abnormal socket closes (code 1006) now keep retrying every
+  5 minutes and the bridge resumes syncing by itself once the network is back, instead of
+  stopping until someone sends `login` or restarts the container.
 - Reactions you make on the Zalo phone app show in Beeper, and removing a reaction in either
   app removes it in the other. Removing one reaction in Beeper keeps your other reactions on
   that message in Zalo.
