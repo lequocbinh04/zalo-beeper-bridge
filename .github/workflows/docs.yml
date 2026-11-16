@@ -1,9 +1,15 @@
 # Publishes the docs site to GitHub Pages.
-# Enable once: Settings → Pages → Build and deployment → Source: "GitHub Actions".
-# Then run this workflow from the Actions tab (it does not run on push yet).
+# Pages source must be "GitHub Actions" (Settings → Pages → Build and deployment).
+# Runs on every push to main that touches the docs, and can be run by hand from Actions.
 name: Docs
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'CHANGELOG.md'
+      - '.github/workflows/docs.yml'
   workflow_dispatch:
 
 permissions:
