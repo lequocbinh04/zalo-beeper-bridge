@@ -1,6 +1,9 @@
 // Resilient wrapper around zca-js Listener: zca-js retryOnClose handles transient
 // drops internally; this layer adds exponential backoff restarts on final closes
 // and escalates to "dead" after repeated failures (cookie expiry / listener stolen).
+// Abnormal closes (1006: network down, DNS failure, host asleep) never escalate:
+// they keep retrying at the capped backoff so the bridge recovers by itself
+// once the network is back, however long the outage lasted.
 //
 // Escalation counter resets only after a STABLE period of connection, not on
 // connect alone — a duplicate-connection fight connects fine before each kick,
@@ -11,6 +14,7 @@ import { errorMessage } from '../error-message.ts';
 
 // CloseReason values from zca-js (no enum imports — erasableSyntaxOnly)
 const MANUAL_CLOSURE = 1000;
+const ABNORMAL_CLOSURE = 1006; // socket dropped without a close frame (network)
 const DUPLICATE_CONNECTION = 3000; // another Zalo Web/listener took over
 
 const BACKOFF_MS = [5_000, 15_000, 60_000, 300_000] as const;
@@ -33,7 +37,8 @@ type ListenerHandlers = {
 /**
  * Supervises one zca-js listener at a time: restarts it with backoff after
  * unexpected closes, emits `connected` / `reconnecting`, and latches `dead` once
- * more than MAX_CONSECUTIVE_FAILURES closes happen without a stable connection in between.
+ * more than MAX_CONSECUTIVE_FAILURES non-network closes happen without a stable connection
+ * in between. Abnormal (1006) closes retry forever at the capped backoff.
  */
 export class ListenerManager extends EventEmitter<ListenerManagerEvents> {
   private api: API | null = null;
@@ -119,7 +124,7 @@ export class ListenerManager extends EventEmitter<ListenerManagerEvents> {
   private scheduleRestart(code: number, reason: string): void {
     if (this.deadLatched) return;
     this.consecutiveFailures++;
-    if (this.consecutiveFailures > MAX_CONSECUTIVE_FAILURES) {
+    if (this.consecutiveFailures > MAX_CONSECUTIVE_FAILURES && code !== ABNORMAL_CLOSURE) {
       this.deadLatched = true;
       const deadReason =
         code === DUPLICATE_CONNECTION

@@ -62,6 +62,22 @@ describe('ListenerManager', () => {
     expect(dead).toHaveBeenCalledWith(expect.stringContaining('taking over'));
   });
 
+  it('keeps retrying through a long network outage (code 1006) instead of latching dead', async () => {
+    const { api, listener } = stubApi();
+    const manager = new ListenerManager();
+    const dead = vi.fn();
+    manager.on('dead', dead);
+    manager.start(api);
+
+    // ~18h offline: every restart attempt closes abnormally (DNS/network down)
+    for (let i = 0; i < 220; i++) {
+      listener.emit('closed', 1006, '');
+      await vi.advanceTimersByTimeAsync(300_000);
+    }
+    expect(dead).not.toHaveBeenCalled();
+    expect(listener.start).toHaveBeenCalledTimes(221); // initial + one restart per close
+  });
+
   it('resets the failure streak after a stable (60s+) connection', async () => {
     const { api, listener } = stubApi();
     const manager = new ListenerManager();
