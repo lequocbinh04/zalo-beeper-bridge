@@ -1,10 +1,12 @@
-// Websocket frame tap in front of the zca-js listener (zca-js 2.1.2/2.2.0 unchanged).
+// Websocket frame tap in front of the zca-js listener.
 //
 // Zalo delivers 1-1 messages of accounts in its E2EE rollout as cmd 551 instead of
 // 501 (Zalo Web: SignalCommands.MSG.RECEIVE_ONEONE). zca-js only handles 501, so
 // those DMs were dropped silently — the listener looked "connected" but no DM ever
 // arrived. The payload envelope is identical, so rewriting the header cmd to 501
 // routes them through the normal DM handler (zca-js PR #384, closed unmerged).
+// zca-js 2.3.0 handles cmd 551 itself ([501, 551].includes(cmd)), so the rewrite is
+// now redundant but harmless; it stays until 2.3.0 is proven on a live account.
 // Unknown cmds are logged once each so future protocol drift is visible.
 import { errorMessage } from '../error-message.ts';
 
@@ -12,7 +14,7 @@ import { errorMessage } from '../error-message.ts';
 const HEADER_BYTES = 4;
 const E2EE_DM_CMD = 551;
 const DM_CMD = 501;
-// Every cmd zca-js 2.1.2 listen.js handles (plus 551, rerouted here)
+// Every cmd zca-js 2.3.0 listen.js handles (551 included)
 const KNOWN_CMDS = new Set([1, 2, 501, 502, 510, 511, 521, 522, 551, 601, 602, 610, 611, 612, 3000]);
 
 /**
